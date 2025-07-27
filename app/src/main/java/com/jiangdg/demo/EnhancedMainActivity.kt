@@ -886,9 +886,10 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
                     // 启动长按检测
                     volumeUpLongPressRunnable = Runnable {
                         if (volumeUpPressed && !isRecording) {
-                            Log.d(TAG, "音量加键长按触发，开始录音")
-                            startRecording()
+                            Log.d(TAG, "音量加键长按触发，模拟点击开始录音按钮")
                             runOnUiThread {
+                                // 模拟点击开始录音按钮
+                                binding.btnRecordAudio.performClick()
                                 Toast.makeText(this@EnhancedMainActivity, "长按音量加键开始录音", Toast.LENGTH_SHORT).show()
                             }
                         }
@@ -914,9 +915,10 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
                     
                     // 如果正在录音，停止录音
                     if (isRecording) {
-                        Log.d(TAG, "音量加键松开，停止录音")
-                        stopRecording()
+                        Log.d(TAG, "音量加键松开，模拟点击停止录音按钮")
                         runOnUiThread {
+                            // 模拟点击停止录音按钮
+                            binding.btnRecordAudio.performClick()
                             Toast.makeText(this@EnhancedMainActivity, "松开音量加键停止录音", Toast.LENGTH_SHORT).show()
                         }
                     }
