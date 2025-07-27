@@ -23,6 +23,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.jiangdg.demo.databinding.ActivityEnhancedMainBinding
 import com.jiangdg.ausbc.encode.audio.AudioStrategyUAC
+import com.jiangdg.ausbc.encode.audio.AudioStrategySystem
 import com.jiangdg.ausbc.encode.audio.IAudioStrategy
 import com.jiangdg.ausbc.encode.bean.RawData
 import com.jiangdg.demo.utils.FileUtils
@@ -155,6 +156,8 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
         
         // 进入原有调节界面
         binding.btnOriginalCamera.setOnClickListener {
+            // 在进入调节界面前，先关闭摄像头和音频设备
+            closeCameraAndAudio()
             startActivity(Intent(this, MainActivity::class.java))
         }
 
@@ -204,18 +207,39 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
                 ctrlBlock ?: return
                 Log.d(TAG, "USB设备已连接并获取控制块: ${device.deviceName}")
                 
-                // 初始化USB音频策略
-                try {
-                    audioStrategy = AudioStrategyUAC(ctrlBlock)
-                    audioStrategy?.initAudioRecord()
-                    Log.d(TAG, "USB音频策略初始化成功")
-                    runOnUiThread {
-                        Toast.makeText(this@EnhancedMainActivity, "USB音频设备已连接", Toast.LENGTH_SHORT).show()
+                // 检查设备类型，只对音频设备初始化音频策略
+                val isAudioDevice = isAudioDevice(device)
+                Log.d(TAG, "设备 ${device.deviceName} 是否为音频设备: $isAudioDevice")
+                
+                if (isAudioDevice) {
+                    // 初始化USB音频策略
+                    try {
+                        audioStrategy = AudioStrategyUAC(ctrlBlock)
+                        audioStrategy?.initAudioRecord()
+                        Log.d(TAG, "USB音频策略初始化成功")
+                        runOnUiThread {
+                            Toast.makeText(this@EnhancedMainActivity, "USB音频设备已连接", Toast.LENGTH_SHORT).show()
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "USB音频策略初始化失败: ${e.message}")
+                        runOnUiThread {
+                            Toast.makeText(this@EnhancedMainActivity, "USB音频设备连接失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                        }
                     }
-                } catch (e: Exception) {
-                    Log.e(TAG, "USB音频策略初始化失败: ${e.message}")
-                    runOnUiThread {
-                        Toast.makeText(this@EnhancedMainActivity, "USB音频设备连接失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                } else {
+                    // 使用系统音频策略（与MainActivity相同的模式）
+                    try {
+                        audioStrategy = AudioStrategySystem()
+                        audioStrategy?.initAudioRecord()
+                        Log.d(TAG, "系统音频策略初始化成功")
+                        runOnUiThread {
+                            Toast.makeText(this@EnhancedMainActivity, "系统音频设备已连接", Toast.LENGTH_SHORT).show()
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "系统音频策略初始化失败: ${e.message}")
+                        runOnUiThread {
+                            Toast.makeText(this@EnhancedMainActivity, "系统音频设备连接失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                        }
                     }
                 }
                 
@@ -259,6 +283,50 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
         cameraClient?.requestPermission(device)
     }
     
+    private fun isAudioDevice(device: UsbDevice): Boolean {
+        // 检查设备是否为音频设备
+        // USB音频设备通常具有以下特征：
+        // 1. 设备类为1 (Audio)
+        // 2. 或者设备名称包含"Audio"、"audio"等关键词
+        // 3. 或者制造商名称包含音频相关关键词
+        
+        val deviceClass = device.deviceClass
+        val deviceName = device.deviceName ?: ""
+        val manufacturerName = device.manufacturerName ?: ""
+        val productName = device.productName ?: ""
+        
+        Log.d(TAG, "检查设备类型: class=$deviceClass, name=$deviceName, manufacturer=$manufacturerName, product=$productName")
+        
+        // 检查设备类是否为音频设备 (1 = Audio)
+        if (deviceClass == 1) {
+            Log.d(TAG, "设备类为音频设备")
+            return true
+        }
+        
+        // 检查设备名称是否包含音频关键词
+        val audioKeywords = listOf("audio", "Audio", "AUDIO", "headset", "Headset", "HEADSET", "microphone", "Microphone", "MICROPHONE")
+        val allNames = "$deviceName $manufacturerName $productName".lowercase()
+        
+        for (keyword in audioKeywords) {
+            if (allNames.contains(keyword.lowercase())) {
+                Log.d(TAG, "设备名称包含音频关键词: $keyword")
+                return true
+            }
+        }
+        
+        // 检查特定的音频设备厂商
+        val audioManufacturers = listOf("TTGK", "ttgk", "Audio-Technica", "Sennheiser", "Shure", "Blue", "Rode")
+        for (manufacturer in audioManufacturers) {
+            if (manufacturerName.contains(manufacturer, ignoreCase = true)) {
+                Log.d(TAG, "设备制造商为音频设备厂商: $manufacturer")
+                return true
+            }
+        }
+        
+        Log.d(TAG, "设备不是音频设备")
+        return false
+    }
+    
     private fun openCamera() {
         // 确保SurfaceView已添加到布局中
         if (surfaceView?.parent == null) {
@@ -286,9 +354,47 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
     private fun closeCamera() {
         currentCamera?.closeCamera()
     }
+    
+    private fun closeCameraAndAudio() {
+        Log.d(TAG, "关闭摄像头和音频设备")
+        
+        // 停止录音
+        if (isRecording) {
+            stopRecording()
+        }
+        
+        // 关闭摄像头
+        closeCamera()
+        
+        // 清理音频策略
+        try {
+            audioStrategy?.releaseAudioRecord()
+            audioStrategy = null
+            Log.d(TAG, "音频策略已清理")
+        } catch (e: Exception) {
+            Log.e(TAG, "清理音频策略失败", e)
+        }
+        
+        // 清理定时器
+        handler.removeCallbacksAndMessages(null)
+        
+        // 更新UI状态
+        binding.btnRecordAudio.text = "开始录音"
+        binding.tvRecordingStatus.visibility = View.GONE
+        
+        Toast.makeText(this, "已关闭摄像头和音频设备", Toast.LENGTH_SHORT).show()
+    }
 
     private fun startRecording() {
         Log.d(TAG, "开始录音")
+        
+        // 检查是否有音频设备
+        if (audioStrategy == null) {
+            Toast.makeText(this, "没有检测到音频设备，无法录音", Toast.LENGTH_LONG).show()
+            Log.w(TAG, "没有音频设备，无法开始录音")
+            return
+        }
+        
         try {
             // 创建音频文件
             currentAudioFile = createAudioFile()
@@ -299,7 +405,7 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
             
             outputStream = java.io.FileOutputStream(currentAudioFile)
             
-            // 启动录音
+            // 启动录音（使用与MainActivity相同的模式）
             audioStrategy?.startRecording()
             isRecording = true
             binding.btnRecordAudio.text = "停止录音"
@@ -309,7 +415,7 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
             // 延迟2秒后开始定时上传，确保录音有足够时间开始
             handler.postDelayed(recordingRunnable, 2000)
             
-            // 启动录音线程
+            // 启动录音线程（使用与MainActivity相同的PCM读取方式）
             startRecordingThread()
             
             Toast.makeText(this, "开始录音", Toast.LENGTH_SHORT).show()
@@ -660,6 +766,12 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
     private fun showAudioStatus() {
         val status = if (isRecording) "正在录音" else "未录音"
         Toast.makeText(this, "录音状态: $status", Toast.LENGTH_SHORT).show()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        // 当Activity暂停时，关闭摄像头和音频设备
+        closeCameraAndAudio()
     }
 
     override fun onDestroy() {
