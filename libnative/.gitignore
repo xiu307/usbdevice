@@ -1,1 +1,66 @@
-/build
+# Built library files
+*.aar
+*.jar
+
+# Generated files
+bin/
+gen/
+out/
+
+# Gradle files
+.gradle/
+build/
+
+# Log Files
+*.log
+
+# IntelliJ
+*.iml
+.idea/
+
+# External native build folder
+.externalNativeBuild
+.cxx/
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Linux
+*~
+
+# Temporary files
+*.tmp
+*.temp
+
+# Backup files
+*.bak
+*.backup
+
+# IDE specific files
+.vscode/
+*.swp
+*.swo
+
+# NDK
+obj/
+
+# CMake
+cmake-build-*/
+
+# Test files
+**/test/
+**/androidTest/
+
+# Generated files
+**/generated/
+**/generated/source/
+
+# Native build artifacts
+*.so
+*.dll
+*.dylib
