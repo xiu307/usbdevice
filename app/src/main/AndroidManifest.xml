@@ -39,6 +39,8 @@
 
         <activity android:name="com.jiangdg.demo.MainActivity"
             android:theme="@style/Theme.ClinkCameraDemo.NoActionBar" />
+        <activity android:name="com.jiangdg.demo.EnhancedMainActivity"
+            android:theme="@style/Theme.ClinkCameraDemo.NoActionBar" />
     </application>
 
 </manifest>

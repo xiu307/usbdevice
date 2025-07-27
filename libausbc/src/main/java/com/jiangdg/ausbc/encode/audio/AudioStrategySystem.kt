@@ -105,7 +105,7 @@ class AudioStrategySystem : IAudioStrategy {
 
     companion object {
         private const val TAG = "AudioSystem"
-        private const val SAMPLE_RATE = 8000
+        private const val SAMPLE_RATE = 16000
         private const val CHANNEL_COUNT = 1
         private const val CHANNEL_IN_CONFIG = AudioFormat.CHANNEL_IN_MONO
         private const val AUDIO_FORMAT_16BIT = AudioFormat.ENCODING_PCM_16BIT

@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/black"
+    tools:context=".EnhancedMainActivity">
+
+    <TextView
+        android:id="@+id/tvTitle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="50dp"
+        android:text="增强功能界面"
+        android:textColor="@color/white"
+        android:textSize="24sp"
+        android:textStyle="bold"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <Button
+        android:id="@+id/btnOriginalCamera"
+        android:layout_width="0dp"
+        android:layout_height="60dp"
+        android:layout_marginStart="40dp"
+        android:layout_marginTop="80dp"
+        android:layout_marginEnd="40dp"
+        android:background="@drawable/button_background"
+        android:text="进入原有调节界面"
+        android:textColor="@color/white"
+        android:textSize="16sp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/tvTitle" />
+
+    <Button
+        android:id="@+id/btnRecordAudio"
+        android:layout_width="0dp"
+        android:layout_height="60dp"
+        android:layout_marginStart="40dp"
+        android:layout_marginTop="30dp"
+        android:layout_marginEnd="40dp"
+        android:background="@drawable/button_background"
+        android:text="开始录音"
+        android:textColor="@color/white"
+        android:textSize="16sp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/btnOriginalCamera" />
+
+    <TextView
+        android:id="@+id/tvRecordingStatus"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:text="录音状态"
+        android:textColor="@color/white"
+        android:textSize="14sp"
+        android:visibility="gone"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/btnRecordAudio" />
+
+    <Button
+        android:id="@+id/btnTakePhoto"
+        android:layout_width="0dp"
+        android:layout_height="60dp"
+        android:layout_marginStart="40dp"
+        android:layout_marginTop="30dp"
+        android:layout_marginEnd="40dp"
+        android:background="@drawable/button_background"
+        android:text="拍照上传"
+        android:textColor="@color/white"
+        android:textSize="16sp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/tvRecordingStatus" />
+
+    <Button
+        android:id="@+id/btnAudioStatus"
+        android:layout_width="0dp"
+        android:layout_height="60dp"
+        android:layout_marginStart="40dp"
+        android:layout_marginTop="30dp"
+        android:layout_marginEnd="40dp"
+        android:background="@drawable/button_background"
+        android:text="查看录音状态"
+        android:textColor="@color/white"
+        android:textSize="16sp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/btnTakePhoto" />
+
+    <TextView
+        android:id="@+id/tvInfo"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="20dp"
+        android:layout_marginTop="50dp"
+        android:layout_marginEnd="20dp"
+        android:gravity="center"
+        android:text="功能说明：\n1. 点击'进入原有调节界面'可以进入原来的摄像头调节界面\n2. 点击'开始录音'开始全程录音并自动上传PCM数据\n3. 点击'拍照上传'拍照并上传到服务器\n4. 录音数据每5秒自动上传一次"
+        android:textColor="@color/white"
+        android:textSize="12sp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/btnAudioStatus" />
+
+</androidx.constraintlayout.widget.ConstraintLayout> 
