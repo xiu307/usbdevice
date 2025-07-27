@@ -603,6 +603,7 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
 
     
     private fun performPhotoCapture() {
+        Log.d(TAG, "开始拍照=====")
         currentCamera?.captureImage(object : ICaptureCallBack {
             override fun onBegin() {
                 Log.d(TAG, "开始拍照")
@@ -771,6 +772,15 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
                 runOnUiThread {
                     if (response.isSuccessful) {
                         Toast.makeText(this@EnhancedMainActivity, "图片上传成功", Toast.LENGTH_SHORT).show()
+                        // 上传成功后删除本地文件
+                        try {
+                            if (photoFile.exists()) {
+                                val deleted = photoFile.delete()
+                                Log.d(TAG, "本地照片文件删除${if (deleted) "成功" else "失败"}: ${photoFile.absolutePath}")
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "删除本地照片文件失败", e)
+                        }
                     } else {
                         Toast.makeText(this@EnhancedMainActivity, "图片上传失败: ${response.code}", Toast.LENGTH_SHORT).show()
                     }
