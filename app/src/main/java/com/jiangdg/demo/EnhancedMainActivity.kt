@@ -60,6 +60,11 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
     private var surfaceView: SurfaceView? = null
     private val handler = Handler(Looper.getMainLooper())
     
+    // 音量键长按相关变量
+    private var volumeUpPressed = false
+    private var volumeUpLongPressRunnable: Runnable? = null
+    private val longPressDelay = 500L // 长按触发时间（毫秒）
+    
     // 音频上传队列
     private val audioUploadQueue = mutableListOf<File>()
     private val maxQueueSize = 400
@@ -852,6 +857,11 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
 
     override fun onDestroy() {
         super.onDestroy()
+        // 清理音量键长按相关资源
+        volumeUpLongPressRunnable?.let { handler.removeCallbacks(it) }
+        volumeUpLongPressRunnable = null
+        volumeUpPressed = false
+        
         stopRecording()
         audioStrategy?.releaseAudioRecord()
         audioStrategy = null
@@ -868,8 +878,53 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
                 takePhotoAndUpload()
                 return true
             }
+            KeyEvent.KEYCODE_VOLUME_UP -> {
+                if (!volumeUpPressed) {
+                    volumeUpPressed = true
+                    Log.d(TAG, "音量加键按下")
+                    
+                    // 启动长按检测
+                    volumeUpLongPressRunnable = Runnable {
+                        if (volumeUpPressed && !isRecording) {
+                            Log.d(TAG, "音量加键长按触发，开始录音")
+                            startRecording()
+                            runOnUiThread {
+                                Toast.makeText(this@EnhancedMainActivity, "长按音量加键开始录音", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                    handler.postDelayed(volumeUpLongPressRunnable!!, longPressDelay)
+                }
+                return true // 消费事件，防止系统音量调节
+            }
         }
         return super.onKeyDown(keyCode, event)
+    }
+    
+    override fun onKeyUp(keyCode: Int, event: KeyEvent?): Boolean {
+        when (keyCode) {
+            KeyEvent.KEYCODE_VOLUME_UP -> {
+                if (volumeUpPressed) {
+                    volumeUpPressed = false
+                    Log.d(TAG, "音量加键松开")
+                    
+                    // 取消长按检测
+                    volumeUpLongPressRunnable?.let { handler.removeCallbacks(it) }
+                    volumeUpLongPressRunnable = null
+                    
+                    // 如果正在录音，停止录音
+                    if (isRecording) {
+                        Log.d(TAG, "音量加键松开，停止录音")
+                        stopRecording()
+                        runOnUiThread {
+                            Toast.makeText(this@EnhancedMainActivity, "松开音量加键停止录音", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+                return true // 消费事件，防止系统音量调节
+            }
+        }
+        return super.onKeyUp(keyCode, event)
     }
     
     private fun addToUploadQueue(audioFile: File) {
@@ -1031,6 +1086,8 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
             null
         }
     }
+    
+
     
     // ICameraStateCallBack 实现
     override fun onCameraState(self: MultiCameraClient.ICamera, code: ICameraStateCallBack.State, msg: String?) {
