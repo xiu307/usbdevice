@@ -60,10 +60,8 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
     private var surfaceView: SurfaceView? = null
     private val handler = Handler(Looper.getMainLooper())
     
-    // 音量键长按相关变量
-    private var volumeUpPressed = false
-    private var volumeUpLongPressRunnable: Runnable? = null
-    private val longPressDelay = 500L // 长按触发时间（毫秒）
+    // 音量键相关变量
+    private var lastVolumeUpTime = 0L // 记录上次音量键按下时间
     
     // 音频上传队列
     private val audioUploadQueue = mutableListOf<File>()
@@ -857,11 +855,6 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
 
     override fun onDestroy() {
         super.onDestroy()
-        // 清理音量键长按相关资源
-        volumeUpLongPressRunnable?.let { handler.removeCallbacks(it) }
-        volumeUpLongPressRunnable = null
-        volumeUpPressed = false
-        
         stopRecording()
         audioStrategy?.releaseAudioRecord()
         audioStrategy = null
@@ -874,27 +867,66 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         when (keyCode) {
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
-                Log.d(TAG, "检测到媒体播放/暂停按钮，触发拍照上传")
-                takePhotoAndUpload()
+                Log.d(TAG, "检测到媒体播放/暂停按钮，模拟点击拍照上传按钮")
+                runOnUiThread {
+                    // 模拟按钮按下效果
+                    binding.btnTakePhoto.isPressed = true
+                    
+                    // 延迟恢复按钮状态
+                    handler.postDelayed({
+                        binding.btnTakePhoto.isPressed = false
+                    }, 200) // 200毫秒后恢复
+                    
+                    // 模拟点击拍照上传按钮
+                    binding.btnTakePhoto.performClick()
+                    Toast.makeText(this@EnhancedMainActivity, "媒体键拍照上传", Toast.LENGTH_SHORT).show()
+                }
                 return true
             }
             KeyEvent.KEYCODE_VOLUME_UP -> {
-                if (!volumeUpPressed) {
-                    volumeUpPressed = true
-                    Log.d(TAG, "音量加键按下")
-                    
-                    // 启动长按检测
-                    volumeUpLongPressRunnable = Runnable {
-                        if (volumeUpPressed && !isRecording) {
-                            Log.d(TAG, "音量加键长按触发，模拟点击开始录音按钮")
-                            runOnUiThread {
-                                // 模拟点击开始录音按钮
-                                binding.btnRecordAudio.performClick()
-                                Toast.makeText(this@EnhancedMainActivity, "长按音量加键开始录音", Toast.LENGTH_SHORT).show()
-                            }
-                        }
+                val currentTime = System.currentTimeMillis()
+                
+                // 防止重复触发，如果距离上次按下时间太短，忽略
+                if (currentTime - lastVolumeUpTime < 100) {
+                    Log.d(TAG, "音量加键按下间隔太短，忽略")
+                    return true
+                }
+                lastVolumeUpTime = currentTime
+                
+                if (!isRecording) {
+                    Log.d(TAG, "音量加键按下，开始录音")
+                    runOnUiThread {
+                        // 模拟按钮按下效果
+                        binding.btnRecordAudio.isPressed = true
+                        
+                        // 延迟恢复按钮状态
+                        handler.postDelayed({
+                            binding.btnRecordAudio.isPressed = false
+                        }, 200) // 200毫秒后恢复
+                        
+                        // 模拟点击开始录音按钮
+                        binding.btnRecordAudio.performClick()
+                        Toast.makeText(this@EnhancedMainActivity, "音量加键开始录音", Toast.LENGTH_SHORT).show()
                     }
-                    handler.postDelayed(volumeUpLongPressRunnable!!, longPressDelay)
+                }
+                return true // 消费事件，防止系统音量调节
+            }
+            KeyEvent.KEYCODE_VOLUME_DOWN -> {
+                if (isRecording) {
+                    Log.d(TAG, "音量减键按下，停止录音")
+                    runOnUiThread {
+                        // 模拟按钮按下效果
+                        binding.btnRecordAudio.isPressed = true
+                        
+                        // 延迟恢复按钮状态
+                        handler.postDelayed({
+                            binding.btnRecordAudio.isPressed = false
+                        }, 200) // 200毫秒后恢复
+                        
+                        // 模拟点击停止录音按钮
+                        binding.btnRecordAudio.performClick()
+                        Toast.makeText(this@EnhancedMainActivity, "音量减键停止录音", Toast.LENGTH_SHORT).show()
+                    }
                 }
                 return true // 消费事件，防止系统音量调节
             }
@@ -902,32 +934,7 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
         return super.onKeyDown(keyCode, event)
     }
     
-    override fun onKeyUp(keyCode: Int, event: KeyEvent?): Boolean {
-        when (keyCode) {
-            KeyEvent.KEYCODE_VOLUME_UP -> {
-                if (volumeUpPressed) {
-                    volumeUpPressed = false
-                    Log.d(TAG, "音量加键松开")
-                    
-                    // 取消长按检测
-                    volumeUpLongPressRunnable?.let { handler.removeCallbacks(it) }
-                    volumeUpLongPressRunnable = null
-                    
-                    // 如果正在录音，停止录音
-                    if (isRecording) {
-                        Log.d(TAG, "音量加键松开，模拟点击停止录音按钮")
-                        runOnUiThread {
-                            // 模拟点击停止录音按钮
-                            binding.btnRecordAudio.performClick()
-                            Toast.makeText(this@EnhancedMainActivity, "松开音量加键停止录音", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                }
-                return true // 消费事件，防止系统音量调节
-            }
-        }
-        return super.onKeyUp(keyCode, event)
-    }
+
     
     private fun addToUploadQueue(audioFile: File) {
         synchronized(audioUploadQueue) {
