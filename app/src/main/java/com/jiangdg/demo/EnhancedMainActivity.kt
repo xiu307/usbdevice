@@ -112,7 +112,7 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
         checkPermissions()
         initViews()
         initAudioRecorder()
-        initCameraClient()
+        // initCameraClient() 移到onResume中，因为onPause会停止摄像头
     }
 
     private fun checkPermissions() {
@@ -188,6 +188,13 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
     }
 
     private fun initCameraClient() {
+        // 检查是否已经初始化，避免重复初始化
+        if (cameraClient != null) {
+            Log.d(TAG, "摄像头客户端已存在，跳过重复初始化")
+            return
+        }
+        
+        Log.d(TAG, "初始化摄像头客户端")
         // 使用USB摄像头，与DemoFragment类似
         cameraClient = MultiCameraClient(this, object : IDeviceConnectCallBack {
             override fun onAttachDev(device: UsbDevice?) {
@@ -477,20 +484,29 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
                     return@launch
                 }
                 
-                // 如果文件太小（小于1KB），也跳过上传
-                if (fileSize < 1024) {
+                // 如果文件太小（小于10KB），也跳过上传
+                if (fileSize < 10240) {
                     Log.w(TAG, "音频文件太小（${fileSize} bytes），跳过上传")
                     return@launch
                 }
                 
-                // 暂停录音线程，避免文件被修改
-                Log.d(TAG, "暂停录音线程进行上传")
-                audioStrategy?.stopRecording()
+                // 创建新的音频文件用于继续录音，而不停止当前录音
+                val newAudioFile = createAudioFile()
+                if (newAudioFile != null) {
+                    // 关闭当前输出流
+                    outputStream?.close()
+                    outputStream = null
+                    
+                    // 创建新的输出流
+                    outputStream = java.io.FileOutputStream(newAudioFile)
+                    
+                    // 更新当前音频文件引用
+                    currentAudioFile = newAudioFile
+                    
+                    Log.d(TAG, "创建新的音频文件继续录音: ${newAudioFile.absolutePath}")
+                }
                 
-                // 等待一小段时间确保文件写入完成
-                delay(100)
-                
-                // 尝试上传文件
+                // 尝试上传文件（不停止录音）
                 val response = uploadAudioFile(audioFile)
                 
                 if (response != null) {
@@ -503,14 +519,8 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
                     addToUploadQueue(audioFile)
                 }
                 
-                // 重新开始录音
-                Log.d(TAG, "重新开始录音")
-                audioStrategy?.startRecording()
-                
             } catch (e: Exception) {
                 Log.e(TAG, "上传音频数据失败", e)
-                // 确保录音重新开始
-                audioStrategy?.startRecording()
                 withContext(Dispatchers.Main) {
                     Toast.makeText(this@EnhancedMainActivity, "音频上传失败: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
@@ -764,8 +774,24 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
     }
 
     private fun showAudioStatus() {
-        val status = if (isRecording) "正在录音" else "未录音"
-        Toast.makeText(this, "录音状态: $status", Toast.LENGTH_SHORT).show()
+        val recordingStatus = if (isRecording) "正在录音" else "未录音"
+        val audioStrategyStatus = if (audioStrategy?.isRecording() == true) "音频策略正常" else "音频策略异常"
+        val status = "录音状态: $recordingStatus, $audioStrategyStatus"
+        Toast.makeText(this, status, Toast.LENGTH_LONG).show()
+        Log.d(TAG, status)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // 当Activity恢复时，重新初始化摄像头客户端
+        Log.d(TAG, "onResume: 重新初始化摄像头客户端")
+        initCameraClient()
+        
+        // 如果cameraClient已存在，重新注册以检测设备
+        if (cameraClient != null) {
+            Log.d(TAG, "onResume: 重新注册摄像头客户端以检测设备")
+            cameraClient?.register()
+        }
     }
 
     override fun onPause() {
@@ -847,8 +873,11 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
     
     private fun playAudioFromUrl(url: String) {
         try {
-            // 释放之前的MediaPlayer
-            releaseMediaPlayer()
+            // 如果正在播放，先停止
+            if (mediaPlayer?.isPlaying == true) {
+                Log.d(TAG, "停止当前播放的音频")
+                releaseMediaPlayer()
+            }
             
             // 创建新的MediaPlayer
             mediaPlayer = MediaPlayer().apply {
@@ -898,7 +927,7 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
             Log.d(TAG, "录音线程启动")
             var totalBytesWritten = 0L
             
-            while (isRecording && audioStrategy?.isRecording() == true) {
+            while (isRecording) {
                 try {
                     val rawData = audioStrategy?.read()
                     if (rawData != null && rawData.size > 0) {
@@ -906,13 +935,17 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
                         outputStream?.flush()
                         totalBytesWritten += rawData.size
                         
-                        if (totalBytesWritten % 10000 == 0L) { // 每10KB记录一次
+                        if (totalBytesWritten % 50000 == 0L) { // 每50KB记录一次，减少日志频率
                             Log.d(TAG, "录音进度: $totalBytesWritten bytes")
                         }
+                    } else {
+                        // 如果没有数据，短暂休眠避免CPU占用过高
+                        Thread.sleep(5) // 减少休眠时间，提高响应速度
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "录音线程错误", e)
-                    break
+                    // 不要立即退出，继续尝试录音
+                    Thread.sleep(50) // 减少错误恢复时间
                 }
             }
             
