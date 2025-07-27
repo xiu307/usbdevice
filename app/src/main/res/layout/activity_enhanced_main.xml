@@ -101,7 +101,7 @@
         android:layout_marginTop="50dp"
         android:layout_marginEnd="20dp"
         android:gravity="center"
-        android:text="功能说明：\n1. 点击'进入原有调节界面'可以进入原来的摄像头调节界面\n2. 点击'开始录音'开始全程录音并自动上传PCM数据\n3. 点击'拍照上传'拍照并上传到服务器\n4. 录音数据每5秒自动上传一次"
+        android:text="功能说明：\n1. 点击'进入原有调节界面'可以进入原来的摄像头调节界面\n2. 点击'开始录音'开始全程录音并自动上传PCM数据（16kHz单声道）\n3. 点击'拍照上传'或按媒体播放/暂停按钮拍照并上传到服务器\n4. 录音数据每5秒自动上传一次\n5. 音频上传成功后会播放服务器返回的音频URL\n6. 自动生成唯一设备ID用于服务器识别"
         android:textColor="@color/white"
         android:textSize="12sp"
         app:layout_constraintEnd_toEndOf="parent"

@@ -11,6 +11,9 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.view.KeyEvent
+import android.view.SurfaceHolder
+import android.view.SurfaceView
 import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -22,6 +25,12 @@ import com.jiangdg.ausbc.encode.audio.AudioStrategySystem
 import com.jiangdg.ausbc.encode.audio.IAudioStrategy
 import com.jiangdg.ausbc.encode.bean.RawData
 import com.jiangdg.demo.utils.FileUtils
+import com.jiangdg.ausbc.MultiCameraClient
+import com.jiangdg.ausbc.callback.ICaptureCallBack
+import com.jiangdg.ausbc.camera.CameraUVC
+import com.jiangdg.ausbc.camera.Camera1Strategy
+import com.jiangdg.ausbc.camera.bean.CameraRequest
+import android.hardware.usb.UsbDevice
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -42,13 +51,20 @@ class EnhancedMainActivity : AppCompatActivity() {
     private var currentAudioFile: File? = null
     private var outputStream: java.io.FileOutputStream? = null
     private var mediaPlayer: MediaPlayer? = null
+    private var cameraStrategy: Camera1Strategy? = null
+    private var surfaceView: SurfaceView? = null
     private val handler = Handler(Looper.getMainLooper())
+    
+    // 音频上传队列
+    private val audioUploadQueue = mutableListOf<File>()
+    private val maxQueueSize = 400
+    
     private val recordingRunnable = object : Runnable {
         override fun run() {
             if (isRecording) {
                 Log.d(TAG, "执行定时上传任务")
                 uploadAudioData()
-                handler.postDelayed(this, 5000) // 每5秒上传一次
+                handler.postDelayed(this, 1000) // 每1秒上传一次
             }
         }
     }
@@ -91,6 +107,7 @@ class EnhancedMainActivity : AppCompatActivity() {
         checkPermissions()
         initViews()
         initAudioRecorder()
+        initCameraClient()
     }
 
     private fun checkPermissions() {
@@ -111,6 +128,28 @@ class EnhancedMainActivity : AppCompatActivity() {
     }
 
     private fun initViews() {
+        // 创建SurfaceView用于摄像头预览
+        surfaceView = SurfaceView(this)
+        surfaceView?.setZOrderMediaOverlay(true) // 确保在后台
+        // 让SurfaceView完全可见，以便摄像头能够正常预览
+        surfaceView?.visibility = View.VISIBLE
+        surfaceView?.alpha = 1.0f // 设置为完全不透明，确保预览正常
+        
+        // 设置SurfaceHolder回调
+        surfaceView?.holder?.addCallback(object : SurfaceHolder.Callback {
+            override fun surfaceCreated(holder: SurfaceHolder) {
+                Log.d(TAG, "Surface已创建")
+            }
+            
+            override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+                Log.d(TAG, "Surface已改变: ${width}x${height}")
+            }
+            
+            override fun surfaceDestroyed(holder: SurfaceHolder) {
+                Log.d(TAG, "Surface已销毁")
+            }
+        })
+        
         // 进入原有调节界面
         binding.btnOriginalCamera.setOnClickListener {
             startActivity(Intent(this, MainActivity::class.java))
@@ -139,6 +178,11 @@ class EnhancedMainActivity : AppCompatActivity() {
     private fun initAudioRecorder() {
         audioStrategy = AudioStrategySystem()
         audioStrategy?.initAudioRecord()
+    }
+
+    private fun initCameraClient() {
+        // 使用Camera1Strategy，与DemoFragment类似
+        cameraStrategy = Camera1Strategy(this)
     }
 
     private fun startRecording() {
@@ -238,8 +282,18 @@ class EnhancedMainActivity : AppCompatActivity() {
                 // 等待一小段时间确保文件写入完成
                 delay(100)
                 
-                // 上传文件
-                uploadAudioFile(audioFile)
+                // 尝试上传文件
+                val response = uploadAudioFile(audioFile)
+                
+                if (response != null) {
+                    Log.d(TAG, "音频上传成功，处理队列")
+                    // 上传成功后，处理队列中的文件
+                    processUploadQueue()
+                } else {
+                    Log.d(TAG, "音频上传失败，添加到队列")
+                    // 上传失败，添加到队列
+                    addToUploadQueue(audioFile)
+                }
                 
                 // 重新开始录音
                 Log.d(TAG, "重新开始录音")
@@ -256,7 +310,7 @@ class EnhancedMainActivity : AppCompatActivity() {
         }
     }
 
-    private fun uploadAudioFile(audioFile: File) {
+    private fun uploadAudioFile(audioFile: File): String? {
         try {
             val client = OkHttpClient.Builder()
                 .connectTimeout(60, TimeUnit.SECONDS)
@@ -291,33 +345,191 @@ class EnhancedMainActivity : AppCompatActivity() {
                         playAudioFromUrl(responseBody)
                     }
                 }
+                return responseBody
             } else {
                 Log.e(TAG, "音频上传失败: ${response.code}")
                 runOnUiThread {
                     Toast.makeText(this@EnhancedMainActivity, "音频上传失败: ${response.code}", Toast.LENGTH_SHORT).show()
                 }
+                return null
             }
         } catch (e: Exception) {
             Log.e(TAG, "音频上传失败", e)
             runOnUiThread {
                 Toast.makeText(this@EnhancedMainActivity, "音频上传失败: ${e.message}", Toast.LENGTH_SHORT).show()
             }
+            return null
         }
     }
 
     private fun takePhotoAndUpload() {
+        // 使用Camera1Strategy进行拍照，与DemoFragment类似
+        if (cameraStrategy?.isCameraOpened() == true) {
+            // 摄像头已打开，直接拍照
+            performPhotoCapture()
+        } else {
+            // 摄像头未打开，尝试打开摄像头
+            Log.d(TAG, "摄像头未打开，尝试打开摄像头")
+            runOnUiThread {
+                Toast.makeText(this@EnhancedMainActivity, "正在打开摄像头...", Toast.LENGTH_SHORT).show()
+            }
+            
+            try {
+                // 确保SurfaceView已添加到布局中
+                if (surfaceView?.parent == null) {
+                    binding.root.addView(surfaceView)
+                }
+                
+                // 等待Surface准备就绪
+                val surface = surfaceView?.holder?.surface
+                val isValid = surface?.isValid
+                Log.d(TAG, "检查Surface状态: surface=${surface != null}, isValid=$isValid")
+                
+                if (isValid != true) {
+                    Log.d(TAG, "等待Surface准备就绪...")
+                    // 确保SurfaceView已添加到布局中
+                    if (surfaceView?.parent == null) {
+                        Log.d(TAG, "SurfaceView未添加到布局，正在添加...")
+                        binding.root.addView(surfaceView)
+                    }
+                    
+                    surfaceView?.holder?.addCallback(object : SurfaceHolder.Callback {
+                        override fun surfaceCreated(holder: SurfaceHolder) {
+                            Log.d(TAG, "Surface已创建，开始启动摄像头")
+                            startCameraPreview()
+                        }
+                        
+                        override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+                            Log.d(TAG, "Surface已改变: ${width}x${height}")
+                        }
+                        
+                        override fun surfaceDestroyed(holder: SurfaceHolder) {
+                            Log.d(TAG, "Surface已销毁")
+                        }
+                    })
+                    return
+                }
+                
+                startCameraPreview()
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "打开摄像头失败", e)
+                createAndUploadMockPhoto()
+            }
+        }
+    }
+    
+    private fun startCameraPreview() {
+        try {
+            Log.d(TAG, "开始启动摄像头预览")
+            
+            // 检查Surface状态
+            val surface = surfaceView?.holder?.surface
+            val isValid = surface?.isValid
+            Log.d(TAG, "启动预览前检查Surface: surface=${surface != null}, isValid=$isValid")
+            
+            if (isValid != true) {
+                Log.e(TAG, "Surface无效，无法启动摄像头预览")
+                createAndUploadMockPhoto()
+                return
+            }
+            
+            // 创建摄像头请求
+            val cameraRequest = CameraRequest.Builder()
+                .setFrontCamera(false)
+                .setPreviewWidth(1280)  // 降低分辨率，提高兼容性
+                .setPreviewHeight(720)
+                .create()
+            
+            Log.d(TAG, "摄像头请求创建完成，开始启动预览")
+            
+            // 启动预览（使用SurfaceView的SurfaceHolder）
+            Log.d(TAG, "开始启动摄像头预览，SurfaceView状态: visible=${surfaceView?.visibility}, alpha=${surfaceView?.alpha}")
+            cameraStrategy?.startPreview(cameraRequest, surfaceView?.holder)
+            
+            // 等待摄像头打开
+            handler.postDelayed({
+                val isOpened = cameraStrategy?.isCameraOpened()
+                Log.d(TAG, "检查摄像头状态: isOpened=$isOpened")
+                
+                if (isOpened == true) {
+                    Log.d(TAG, "摄像头已打开，开始拍照")
+                    performPhotoCapture()
+                } else {
+                    Log.e(TAG, "摄像头打开失败，使用模拟图片")
+                    createAndUploadMockPhoto()
+                }
+            }, 2000) // 等待2秒让摄像头初始化
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "启动摄像头预览失败", e)
+            createAndUploadMockPhoto()
+        }
+    }
+    
+    private fun performPhotoCapture() {
+        cameraStrategy?.captureImage(object : ICaptureCallBack {
+            override fun onBegin() {
+                Log.d(TAG, "开始拍照")
+                runOnUiThread {
+                    Toast.makeText(this@EnhancedMainActivity, "开始拍照", Toast.LENGTH_SHORT).show()
+                }
+            }
+
+            override fun onError(error: String?) {
+                Log.e(TAG, "拍照失败: $error")
+                runOnUiThread {
+                    Toast.makeText(this@EnhancedMainActivity, "拍照失败: $error", Toast.LENGTH_SHORT).show()
+                }
+                // 拍照失败时，使用模拟图片
+                createAndUploadMockPhoto()
+            }
+
+            override fun onComplete(path: String?) {
+                Log.d(TAG, "拍照完成: $path")
+                if (path != null) {
+                    val photoFile = File(path)
+                    if (photoFile.exists()) {
+                        // 显示照片保存路径
+                        runOnUiThread {
+                            Toast.makeText(this@EnhancedMainActivity, "真实照片已保存到: $path", Toast.LENGTH_LONG).show()
+                            Log.d(TAG, "真实照片文件大小: ${photoFile.length()} bytes")
+                        }
+                        // 上传照片
+                        uploadPhotoFile(photoFile)
+                    } else {
+                        runOnUiThread {
+                            Toast.makeText(this@EnhancedMainActivity, "照片文件不存在", Toast.LENGTH_SHORT).show()
+                        }
+                        createAndUploadMockPhoto()
+                    }
+                } else {
+                    runOnUiThread {
+                        Toast.makeText(this@EnhancedMainActivity, "拍照路径为空", Toast.LENGTH_SHORT).show()
+                    }
+                    createAndUploadMockPhoto()
+                }
+            }
+        }, null)
+    }
+    
+    private fun createAndUploadMockPhoto() {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                // 这里需要从摄像头获取图片
-                // 暂时使用模拟的图片文件
                 val photoFile = createMockPhotoFile()
                 if (photoFile != null) {
+                    // 显示照片保存路径
+                    runOnUiThread {
+                        Toast.makeText(this@EnhancedMainActivity, "模拟照片已保存到: ${photoFile.absolutePath}", Toast.LENGTH_LONG).show()
+                        Log.d(TAG, "模拟照片文件大小: ${photoFile.length()} bytes")
+                    }
+                    // 上传照片
                     uploadPhotoFile(photoFile)
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "拍照上传失败", e)
+                Log.e(TAG, "创建模拟照片失败", e)
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@EnhancedMainActivity, "拍照上传失败", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@EnhancedMainActivity, "创建模拟照片失败", Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -325,27 +537,69 @@ class EnhancedMainActivity : AppCompatActivity() {
 
     private fun createMockPhotoFile(): File? {
         try {
-            // 创建一个简单的测试图片文件
-            val photoFile = File(cacheDir, "photo_${System.currentTimeMillis()}.jpg")
+            // 创建一个更真实的测试图片文件
+            val photoFile = File(cacheDir, "mock_photo_${System.currentTimeMillis()}.jpg")
             
-            // 创建一个简单的JPEG文件头
-            val jpegHeader = byteArrayOf(
-                0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xE0.toByte(), // JPEG SOI + APP0
-                0x00.toByte(), 0x10.toByte(), // Length
-                0x4A.toByte(), 0x46.toByte(), 0x49.toByte(), 0x46.toByte(), // "JFIF"
-                0x00.toByte(), // Null terminator
+            // 创建一个基本的JPEG文件，包含更多数据
+            val jpegData = byteArrayOf(
+                // JPEG SOI
+                0xFF.toByte(), 0xD8.toByte(),
+                // APP0 segment
+                0xFF.toByte(), 0xE0.toByte(), 0x00.toByte(), 0x10.toByte(),
+                0x4A.toByte(), 0x46.toByte(), 0x49.toByte(), 0x46.toByte(), 0x00.toByte(), // "JFIF"
                 0x01.toByte(), 0x01.toByte(), // Version 1.1
                 0x00.toByte(), // Units: none
                 0x00.toByte(), 0x01.toByte(), // Density: 1x1
                 0x00.toByte(), 0x01.toByte(),
-                0x00.toByte(), 0x00.toByte()  // No thumbnail
+                0x00.toByte(), 0x00.toByte(), // No thumbnail
+                // DQT segment (Quantization table)
+                0xFF.toByte(), 0xDB.toByte(), 0x00.toByte(), 0x43.toByte(), 0x00.toByte(),
+                // Luminance quantization table
+                0x08.toByte(), 0x06.toByte(), 0x07.toByte(), 0x08.toByte(), 0x09.toByte(), 0x0A.toByte(), 0x0B.toByte(), 0x0C.toByte(),
+                0x06.toByte(), 0x07.toByte(), 0x08.toByte(), 0x09.toByte(), 0x0A.toByte(), 0x0B.toByte(), 0x0C.toByte(), 0x0D.toByte(),
+                0x07.toByte(), 0x08.toByte(), 0x09.toByte(), 0x0A.toByte(), 0x0B.toByte(), 0x0C.toByte(), 0x0D.toByte(), 0x0E.toByte(),
+                0x08.toByte(), 0x09.toByte(), 0x0A.toByte(), 0x0B.toByte(), 0x0C.toByte(), 0x0D.toByte(), 0x0E.toByte(), 0x0F.toByte(),
+                0x09.toByte(), 0x0A.toByte(), 0x0B.toByte(), 0x0C.toByte(), 0x0D.toByte(), 0x0E.toByte(), 0x0F.toByte(), 0x10.toByte(),
+                0x0A.toByte(), 0x0B.toByte(), 0x0C.toByte(), 0x0D.toByte(), 0x0E.toByte(), 0x0F.toByte(), 0x10.toByte(), 0x11.toByte(),
+                0x0B.toByte(), 0x0C.toByte(), 0x0D.toByte(), 0x0E.toByte(), 0x0F.toByte(), 0x10.toByte(), 0x11.toByte(), 0x12.toByte(),
+                0x0C.toByte(), 0x0D.toByte(), 0x0E.toByte(), 0x0F.toByte(), 0x10.toByte(), 0x11.toByte(), 0x12.toByte(), 0x13.toByte(),
+                // Chrominance quantization table
+                0x0D.toByte(), 0x0E.toByte(), 0x0F.toByte(), 0x10.toByte(), 0x11.toByte(), 0x12.toByte(), 0x13.toByte(), 0x14.toByte(),
+                0x0E.toByte(), 0x0F.toByte(), 0x10.toByte(), 0x11.toByte(), 0x12.toByte(), 0x13.toByte(), 0x14.toByte(), 0x15.toByte(),
+                0x0F.toByte(), 0x10.toByte(), 0x11.toByte(), 0x12.toByte(), 0x13.toByte(), 0x14.toByte(), 0x15.toByte(), 0x16.toByte(),
+                0x10.toByte(), 0x11.toByte(), 0x12.toByte(), 0x13.toByte(), 0x14.toByte(), 0x15.toByte(), 0x16.toByte(), 0x17.toByte(),
+                0x11.toByte(), 0x12.toByte(), 0x13.toByte(), 0x14.toByte(), 0x15.toByte(), 0x16.toByte(), 0x17.toByte(), 0x18.toByte(),
+                0x12.toByte(), 0x13.toByte(), 0x14.toByte(), 0x15.toByte(), 0x16.toByte(), 0x17.toByte(), 0x18.toByte(), 0x19.toByte(),
+                0x13.toByte(), 0x14.toByte(), 0x15.toByte(), 0x16.toByte(), 0x17.toByte(), 0x18.toByte(), 0x19.toByte(), 0x1A.toByte(),
+                0x14.toByte(), 0x15.toByte(), 0x16.toByte(), 0x17.toByte(), 0x18.toByte(), 0x19.toByte(), 0x1A.toByte(), 0x1B.toByte(),
+                // SOF0 segment (Start of Frame)
+                0xFF.toByte(), 0xC0.toByte(), 0x00.toByte(), 0x11.toByte(), 0x08.toByte(),
+                0x00.toByte(), 0x10.toByte(), // Height: 16 pixels
+                0x00.toByte(), 0x10.toByte(), // Width: 16 pixels
+                0x03.toByte(), // Number of components
+                0x01.toByte(), 0x11.toByte(), 0x00.toByte(), // Y component
+                0x02.toByte(), 0x11.toByte(), 0x01.toByte(), // Cb component
+                0x03.toByte(), 0x11.toByte(), 0x01.toByte(), // Cr component
+                // DHT segment (Huffman table)
+                0xFF.toByte(), 0xC4.toByte(), 0x00.toByte(), 0x1F.toByte(), 0x00.toByte(),
+                0x00.toByte(), 0x01.toByte(), 0x05.toByte(), 0x01.toByte(), 0x01.toByte(), 0x01.toByte(), 0x01.toByte(), 0x01.toByte(), 0x01.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x01.toByte(), 0x02.toByte(), 0x03.toByte(), 0x04.toByte(), 0x05.toByte(), 0x06.toByte(), 0x07.toByte(), 0x08.toByte(), 0x09.toByte(), 0x0A.toByte(), 0x0B.toByte(),
+                // SOS segment (Start of Scan)
+                0xFF.toByte(), 0xDA.toByte(), 0x00.toByte(), 0x0C.toByte(), 0x03.toByte(),
+                0x01.toByte(), 0x00.toByte(), 0x02.toByte(), 0x11.toByte(), 0x03.toByte(), 0x11.toByte(), 0x00.toByte(), 0x3F.toByte(), 0x00.toByte(),
+                // 一些基本的图像数据（16x16像素的简单图像）
+                0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(),
+                0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(),
+                0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(),
+                0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(),
+                // JPEG EOI
+                0xFF.toByte(), 0xD9.toByte()
             )
             
-            photoFile.writeBytes(jpegHeader)
-            Log.d(TAG, "创建测试图片文件: ${photoFile.absolutePath}")
+            photoFile.writeBytes(jpegData)
+            Log.d(TAG, "创建模拟图片文件: ${photoFile.absolutePath}, 大小: ${photoFile.length()} bytes")
             return photoFile
         } catch (e: Exception) {
-            Log.e(TAG, "创建测试图片文件失败", e)
+            Log.e(TAG, "创建模拟图片文件失败", e)
             return null
         }
     }
@@ -400,6 +654,67 @@ class EnhancedMainActivity : AppCompatActivity() {
         stopRecording()
         audioStrategy?.releaseAudioRecord()
         releaseMediaPlayer()
+        cameraStrategy?.stopPreview()
+    }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        when (keyCode) {
+            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
+                Log.d(TAG, "检测到媒体播放/暂停按钮，触发拍照上传")
+                takePhotoAndUpload()
+                return true
+            }
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+    
+    private fun addToUploadQueue(audioFile: File) {
+        synchronized(audioUploadQueue) {
+            if (audioUploadQueue.size >= maxQueueSize) {
+                Log.w(TAG, "上传队列已满（${maxQueueSize}条），丢弃最旧的文件")
+                audioUploadQueue.removeAt(0) // 移除最旧的文件
+            }
+            audioUploadQueue.add(audioFile)
+            Log.d(TAG, "文件已添加到上传队列，当前队列大小: ${audioUploadQueue.size}")
+        }
+    }
+    
+    private fun processUploadQueue() {
+        lifecycleScope.launch(Dispatchers.IO) {
+            synchronized(audioUploadQueue) {
+                if (audioUploadQueue.isEmpty()) {
+                    Log.d(TAG, "上传队列为空")
+                    return@launch
+                }
+                
+                Log.d(TAG, "开始处理上传队列，队列大小: ${audioUploadQueue.size}")
+                
+                val filesToProcess = audioUploadQueue.toList()
+                audioUploadQueue.clear()
+                
+                for (file in filesToProcess) {
+                    try {
+                        if (file.exists()) {
+                            Log.d(TAG, "处理队列中的文件: ${file.name}")
+                            val response = uploadAudioFile(file)
+                            if (response != null) {
+                                Log.d(TAG, "队列文件上传成功: ${file.name}")
+                            } else {
+                                Log.e(TAG, "队列文件上传失败: ${file.name}")
+                                // 重新添加到队列
+                                addToUploadQueue(file)
+                            }
+                        } else {
+                            Log.w(TAG, "队列中的文件不存在: ${file.name}")
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "处理队列文件失败: ${file.name}", e)
+                        // 重新添加到队列
+                        addToUploadQueue(file)
+                    }
+                }
+            }
+        }
     }
     
     private fun playAudioFromUrl(url: String) {
