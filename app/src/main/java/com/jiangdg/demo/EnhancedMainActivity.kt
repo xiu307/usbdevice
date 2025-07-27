@@ -654,8 +654,6 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
                 runOnUiThread {
                     Toast.makeText(this@EnhancedMainActivity, "拍照失败: $error", Toast.LENGTH_SHORT).show()
                 }
-                // 拍照失败时，使用模拟图片
-                createAndUploadMockPhoto()
             }
 
             override fun onComplete(path: String?) {
@@ -674,108 +672,16 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
                         runOnUiThread {
                             Toast.makeText(this@EnhancedMainActivity, "照片文件不存在", Toast.LENGTH_SHORT).show()
                         }
-                        createAndUploadMockPhoto()
                     }
                 } else {
                     runOnUiThread {
                         Toast.makeText(this@EnhancedMainActivity, "拍照路径为空", Toast.LENGTH_SHORT).show()
                     }
-                    createAndUploadMockPhoto()
                 }
             }
         }, null)
     }
     
-    private fun createAndUploadMockPhoto() {
-        lifecycleScope.launch(Dispatchers.IO) {
-            try {
-                val photoFile = createMockPhotoFile()
-                if (photoFile != null) {
-                    // 显示照片保存路径
-                    runOnUiThread {
-                        Toast.makeText(this@EnhancedMainActivity, "模拟照片已保存到: ${photoFile.absolutePath}", Toast.LENGTH_LONG).show()
-                        Log.d(TAG, "模拟照片文件大小: ${photoFile.length()} bytes")
-                    }
-                    // 上传照片
-                    uploadPhotoFile(photoFile)
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "创建模拟照片失败", e)
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(this@EnhancedMainActivity, "创建模拟照片失败", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
-    }
-
-    private fun createMockPhotoFile(): File? {
-        try {
-            // 创建一个更真实的测试图片文件
-            val photoFile = File(cacheDir, "mock_photo_${System.currentTimeMillis()}.jpg")
-            
-            // 创建一个基本的JPEG文件，包含更多数据
-            val jpegData = byteArrayOf(
-                // JPEG SOI
-                0xFF.toByte(), 0xD8.toByte(),
-                // APP0 segment
-                0xFF.toByte(), 0xE0.toByte(), 0x00.toByte(), 0x10.toByte(),
-                0x4A.toByte(), 0x46.toByte(), 0x49.toByte(), 0x46.toByte(), 0x00.toByte(), // "JFIF"
-                0x01.toByte(), 0x01.toByte(), // Version 1.1
-                0x00.toByte(), // Units: none
-                0x00.toByte(), 0x01.toByte(), // Density: 1x1
-                0x00.toByte(), 0x01.toByte(),
-                0x00.toByte(), 0x00.toByte(), // No thumbnail
-                // DQT segment (Quantization table)
-                0xFF.toByte(), 0xDB.toByte(), 0x00.toByte(), 0x43.toByte(), 0x00.toByte(),
-                // Luminance quantization table
-                0x08.toByte(), 0x06.toByte(), 0x07.toByte(), 0x08.toByte(), 0x09.toByte(), 0x0A.toByte(), 0x0B.toByte(), 0x0C.toByte(),
-                0x06.toByte(), 0x07.toByte(), 0x08.toByte(), 0x09.toByte(), 0x0A.toByte(), 0x0B.toByte(), 0x0C.toByte(), 0x0D.toByte(),
-                0x07.toByte(), 0x08.toByte(), 0x09.toByte(), 0x0A.toByte(), 0x0B.toByte(), 0x0C.toByte(), 0x0D.toByte(), 0x0E.toByte(),
-                0x08.toByte(), 0x09.toByte(), 0x0A.toByte(), 0x0B.toByte(), 0x0C.toByte(), 0x0D.toByte(), 0x0E.toByte(), 0x0F.toByte(),
-                0x09.toByte(), 0x0A.toByte(), 0x0B.toByte(), 0x0C.toByte(), 0x0D.toByte(), 0x0E.toByte(), 0x0F.toByte(), 0x10.toByte(),
-                0x0A.toByte(), 0x0B.toByte(), 0x0C.toByte(), 0x0D.toByte(), 0x0E.toByte(), 0x0F.toByte(), 0x10.toByte(), 0x11.toByte(),
-                0x0B.toByte(), 0x0C.toByte(), 0x0D.toByte(), 0x0E.toByte(), 0x0F.toByte(), 0x10.toByte(), 0x11.toByte(), 0x12.toByte(),
-                0x0C.toByte(), 0x0D.toByte(), 0x0E.toByte(), 0x0F.toByte(), 0x10.toByte(), 0x11.toByte(), 0x12.toByte(), 0x13.toByte(),
-                // Chrominance quantization table
-                0x0D.toByte(), 0x0E.toByte(), 0x0F.toByte(), 0x10.toByte(), 0x11.toByte(), 0x12.toByte(), 0x13.toByte(), 0x14.toByte(),
-                0x0E.toByte(), 0x0F.toByte(), 0x10.toByte(), 0x11.toByte(), 0x12.toByte(), 0x13.toByte(), 0x14.toByte(), 0x15.toByte(),
-                0x0F.toByte(), 0x10.toByte(), 0x11.toByte(), 0x12.toByte(), 0x13.toByte(), 0x14.toByte(), 0x15.toByte(), 0x16.toByte(),
-                0x10.toByte(), 0x11.toByte(), 0x12.toByte(), 0x13.toByte(), 0x14.toByte(), 0x15.toByte(), 0x16.toByte(), 0x17.toByte(),
-                0x11.toByte(), 0x12.toByte(), 0x13.toByte(), 0x14.toByte(), 0x15.toByte(), 0x16.toByte(), 0x17.toByte(), 0x18.toByte(),
-                0x12.toByte(), 0x13.toByte(), 0x14.toByte(), 0x15.toByte(), 0x16.toByte(), 0x17.toByte(), 0x18.toByte(), 0x19.toByte(),
-                0x13.toByte(), 0x14.toByte(), 0x15.toByte(), 0x16.toByte(), 0x17.toByte(), 0x18.toByte(), 0x19.toByte(), 0x1A.toByte(),
-                0x14.toByte(), 0x15.toByte(), 0x16.toByte(), 0x17.toByte(), 0x18.toByte(), 0x19.toByte(), 0x1A.toByte(), 0x1B.toByte(),
-                // SOF0 segment (Start of Frame)
-                0xFF.toByte(), 0xC0.toByte(), 0x00.toByte(), 0x11.toByte(), 0x08.toByte(),
-                0x00.toByte(), 0x10.toByte(), // Height: 16 pixels
-                0x00.toByte(), 0x10.toByte(), // Width: 16 pixels
-                0x03.toByte(), // Number of components
-                0x01.toByte(), 0x11.toByte(), 0x00.toByte(), // Y component
-                0x02.toByte(), 0x11.toByte(), 0x01.toByte(), // Cb component
-                0x03.toByte(), 0x11.toByte(), 0x01.toByte(), // Cr component
-                // DHT segment (Huffman table)
-                0xFF.toByte(), 0xC4.toByte(), 0x00.toByte(), 0x1F.toByte(), 0x00.toByte(),
-                0x00.toByte(), 0x01.toByte(), 0x05.toByte(), 0x01.toByte(), 0x01.toByte(), 0x01.toByte(), 0x01.toByte(), 0x01.toByte(), 0x01.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x01.toByte(), 0x02.toByte(), 0x03.toByte(), 0x04.toByte(), 0x05.toByte(), 0x06.toByte(), 0x07.toByte(), 0x08.toByte(), 0x09.toByte(), 0x0A.toByte(), 0x0B.toByte(),
-                // SOS segment (Start of Scan)
-                0xFF.toByte(), 0xDA.toByte(), 0x00.toByte(), 0x0C.toByte(), 0x03.toByte(),
-                0x01.toByte(), 0x00.toByte(), 0x02.toByte(), 0x11.toByte(), 0x03.toByte(), 0x11.toByte(), 0x00.toByte(), 0x3F.toByte(), 0x00.toByte(),
-                // 一些基本的图像数据（16x16像素的简单图像）
-                0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(),
-                0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(),
-                0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(),
-                0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(), 0x00.toByte(),
-                // JPEG EOI
-                0xFF.toByte(), 0xD9.toByte()
-            )
-            
-            photoFile.writeBytes(jpegData)
-            Log.d(TAG, "创建模拟图片文件: ${photoFile.absolutePath}, 大小: ${photoFile.length()} bytes")
-            return photoFile
-        } catch (e: Exception) {
-            Log.e(TAG, "创建模拟图片文件失败", e)
-            return null
-        }
-    }
 
     private fun uploadPhotoFile(photoFile: File) {
         val client = OkHttpClient.Builder()
