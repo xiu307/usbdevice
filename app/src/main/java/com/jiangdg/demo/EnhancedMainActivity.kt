@@ -3,6 +3,7 @@ package com.jiangdg.demo
 import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.provider.Settings
 import android.graphics.Bitmap
@@ -27,6 +28,7 @@ import com.jiangdg.ausbc.encode.audio.AudioStrategySystem
 import com.jiangdg.ausbc.encode.audio.IAudioStrategy
 import com.jiangdg.ausbc.encode.bean.RawData
 import com.jiangdg.demo.utils.FileUtils
+import com.jiangdg.demo.utils.PcmAnalyzer
 import com.jiangdg.ausbc.MultiCameraClient
 import com.jiangdg.ausbc.callback.ICaptureCallBack
 import com.jiangdg.ausbc.callback.ICameraStateCallBack
@@ -45,6 +47,8 @@ import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.File
 import java.io.IOException
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 
@@ -52,9 +56,18 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
     private lateinit var binding: ActivityEnhancedMainBinding
     private var audioStrategy: IAudioStrategy? = null
     private var isRecording = false
+    private var isPhoneMicRecording = false
     private var currentAudioFile: File? = null
     private var outputStream: java.io.FileOutputStream? = null
     private var mediaPlayer: MediaPlayer? = null
+    
+    // 手机麦克风录音相关
+    private var phoneMicAudioRecord: android.media.AudioRecord? = null
+    private var phoneMicRecordingThread: Thread? = null
+    private var phoneMicOutputStream: java.io.FileOutputStream? = null
+    private var phoneMicCurrentFile: File? = null
+    private var phoneMicTotalBytesWritten = 0L
+    private var phoneMicUploadRunnable: Runnable? = null
     private var cameraClient: MultiCameraClient? = null
     private var currentCamera: MultiCameraClient.ICamera? = null
     private var surfaceView: SurfaceView? = null
@@ -80,7 +93,14 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
     companion object {
         private const val TAG = "EnhancedMainActivity"
         private const val PERMISSION_REQUEST_CODE = 100
-        private const val SERVER_URL = "http://114.55.106.4:80"
+        private const val DEFAULT_SERVER_URL = "http://114.55.106.4:80"
+    private var serverUrl: String = DEFAULT_SERVER_URL
+    private var glassesId: String = ""
+    
+    // SharedPreferences相关
+    private lateinit var sharedPreferences: SharedPreferences
+    private val PREF_NAME = "EnhancedMainActivityPrefs"
+    private val KEY_SERVER_URL = "server_url"
         
         // 生成唯一的glassesId
         fun generateGlassesId(context: Context): String {
@@ -111,6 +131,22 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
 
         // 初始化FileUtils
         FileUtils.init(this)
+        
+        // 初始化SharedPreferences
+        sharedPreferences = getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+        
+        // 加载保存的服务器URL
+        serverUrl = sharedPreferences.getString(KEY_SERVER_URL, DEFAULT_SERVER_URL) ?: DEFAULT_SERVER_URL
+        
+        // 设置服务器URL输入框
+        setupServerUrlInput()
+
+        // 生成设备ID
+        glassesId = generateGlassesId(this)
+        Log.d(TAG, "生成的设备ID: $glassesId")
+
+        // 清理旧的PCM文件
+        cleanupOldPcmFiles()
 
         checkPermissions()
         initViews()
@@ -135,6 +171,28 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
         }
     }
 
+    private fun setupServerUrlInput() {
+        // 设置输入框的初始值
+        binding.etServerUrl.setText(serverUrl)
+        
+        // 监听输入框变化，实时保存
+        binding.etServerUrl.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            
+            override fun afterTextChanged(s: android.text.Editable?) {
+                val newUrl = s?.toString()?.trim()
+                if (!newUrl.isNullOrEmpty()) {
+                    serverUrl = newUrl
+                    // 保存到SharedPreferences
+                    sharedPreferences.edit().putString(KEY_SERVER_URL, serverUrl).apply()
+                    Log.d(TAG, "服务器URL已更新: $serverUrl")
+                }
+            }
+        })
+    }
+    
     private fun initViews() {
         // 创建一个1x1像素的隐藏SurfaceView用于摄像头预览
         surfaceView = SurfaceView(this)
@@ -181,6 +239,15 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
         // 查看录音状态
         binding.btnAudioStatus.setOnClickListener {
             showAudioStatus()
+        }
+
+        // 手机麦克风录音
+        binding.btnPhoneMicRecord.setOnClickListener {
+            if (isPhoneMicRecording) {
+                stopPhoneMicRecording()
+            } else {
+                startPhoneMicRecording()
+            }
         }
     }
 
@@ -561,6 +628,63 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
         }
     }
 
+    private fun uploadPhoneMicAudioFile(audioFile: File): String? {
+        return try {
+            Log.d(TAG, "开始上传手机麦克风录音文件: ${audioFile.absolutePath}")
+            
+            val fileSize = audioFile.length()
+            if (fileSize == 0L) {
+                Log.w(TAG, "手机麦克风录音文件为空，跳过上传")
+                return null
+            }
+
+            val requestBody = MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart("glassesId", glassesId)
+                .addFormDataPart("file", audioFile.name, audioFile.asRequestBody("audio/pcm".toMediaType()))
+                .build()
+
+            val request = Request.Builder()
+                .url("$serverUrl/gw/glasses/audio")
+                .post(requestBody)
+                .build()
+
+            val client = OkHttpClient.Builder()
+                .connectTimeout(30, TimeUnit.SECONDS)
+                .writeTimeout(30, TimeUnit.SECONDS)
+                .readTimeout(30, TimeUnit.SECONDS)
+                .build()
+
+            val response = client.newCall(request).execute()
+            val responseBody = response.body?.string()
+
+            if (response.isSuccessful) {
+                Log.d(TAG, "手机麦克风录音上传成功")
+                runOnUiThread {
+                    Toast.makeText(this@EnhancedMainActivity, "手机麦克风录音上传成功", Toast.LENGTH_SHORT).show()
+                    // 如果响应包含URL，尝试播放音频
+                    if (!responseBody.isNullOrEmpty()) {
+                        Log.d(TAG, "尝试播放返回的音频URL: $responseBody")
+                        playAudioFromUrl(responseBody)
+                    }
+                }
+                return responseBody
+            } else {
+                Log.e(TAG, "手机麦克风录音上传失败: ${response.code}, 响应内容: $responseBody")
+                runOnUiThread {
+                    Toast.makeText(this@EnhancedMainActivity, "手机麦克风录音上传失败: ${response.code}", Toast.LENGTH_SHORT).show()
+                }
+                return null
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "手机麦克风录音上传异常", e)
+            runOnUiThread {
+                Toast.makeText(this@EnhancedMainActivity, "手机麦克风录音上传异常: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+            return null
+        }
+    }
+
     private fun uploadAudioFile(audioFile: File): String? {
         try {
             val client = OkHttpClient.Builder()
@@ -576,7 +700,7 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
                 .build()
 
             val request = Request.Builder()
-                .url("$SERVER_URL/gw/glasses/audio")
+                .url("$serverUrl/gw/glasses/audio")
                 .post(requestBody)
                 .build()
 
@@ -697,7 +821,7 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
                 .build()
 
         val request = Request.Builder()
-            .url("$SERVER_URL/gw/glasses/picture")
+                            .url("$serverUrl/gw/glasses/picture")
             .post(requestBody)
             .build()
 
@@ -735,9 +859,308 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
     private fun showAudioStatus() {
         val recordingStatus = if (isRecording) "正在录音" else "未录音"
         val audioStrategyStatus = if (audioStrategy?.isRecording() == true) "音频策略正常" else "音频策略异常"
-        val status = "录音状态: $recordingStatus, $audioStrategyStatus"
+        val phoneMicStatus = if (isPhoneMicRecording) "手机麦克风录音中" else "手机麦克风未录音"
+        val status = "录音状态: $recordingStatus, $audioStrategyStatus, $phoneMicStatus"
         Toast.makeText(this, status, Toast.LENGTH_LONG).show()
         Log.d(TAG, status)
+    }
+
+    private fun startPhoneMicRecording() {
+        if (isPhoneMicRecording) {
+            Toast.makeText(this, "手机麦克风录音已在进行中", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        try {
+            // 创建音频文件
+            val audioFile = createAudioFile()
+            if (audioFile == null) {
+                Toast.makeText(this, "创建音频文件失败", Toast.LENGTH_SHORT).show()
+                return
+            }
+
+            phoneMicCurrentFile = audioFile
+            phoneMicOutputStream = java.io.FileOutputStream(audioFile)
+
+            // 配置AudioRecord参数 - 16kHz单声道
+            val sampleRate = 16000
+            val channelConfig = android.media.AudioFormat.CHANNEL_IN_MONO
+            val audioFormat = android.media.AudioFormat.ENCODING_PCM_16BIT
+            val bufferSize = android.media.AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat)
+
+            if (bufferSize == android.media.AudioRecord.ERROR_BAD_VALUE || bufferSize == android.media.AudioRecord.ERROR) {
+                Toast.makeText(this, "不支持的音频配置", Toast.LENGTH_SHORT).show()
+                return
+            }
+
+            // 创建AudioRecord
+            phoneMicAudioRecord = android.media.AudioRecord(
+                android.media.MediaRecorder.AudioSource.MIC,
+                sampleRate,
+                channelConfig,
+                audioFormat,
+                bufferSize
+            )
+
+            if (phoneMicAudioRecord?.state != android.media.AudioRecord.STATE_INITIALIZED) {
+                Toast.makeText(this, "AudioRecord初始化失败", Toast.LENGTH_SHORT).show()
+                return
+            }
+
+            // 开始录音
+            phoneMicAudioRecord?.startRecording()
+            isPhoneMicRecording = true
+            phoneMicTotalBytesWritten = 0L
+
+            // 更新UI
+            binding.btnPhoneMicRecord.text = "停止手机录音"
+            binding.btnPhoneMicRecord.isSelected = true
+
+            // 启动录音线程
+            startPhoneMicRecordingThread()
+
+            // 启动定时上传任务
+            startPhoneMicUploadTask()
+
+            Toast.makeText(this, "手机麦克风录音已开始", Toast.LENGTH_SHORT).show()
+            Log.d(TAG, "手机麦克风录音开始: ${audioFile.absolutePath}")
+
+        } catch (e: Exception) {
+            Log.e(TAG, "手机麦克风录音启动失败", e)
+            Toast.makeText(this, "手机麦克风录音启动失败: ${e.message}", Toast.LENGTH_SHORT).show()
+            cleanupPhoneMicResources()
+        }
+    }
+
+    private fun stopPhoneMicRecording() {
+        if (!isPhoneMicRecording) {
+            Toast.makeText(this, "手机麦克风录音未在进行中", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        try {
+            // 停止录音
+            phoneMicAudioRecord?.stop()
+            phoneMicAudioRecord?.release()
+            phoneMicAudioRecord = null
+
+            // 停止录音线程
+            phoneMicRecordingThread?.interrupt()
+            phoneMicRecordingThread = null
+
+            // 关闭输出流
+            phoneMicOutputStream?.close()
+            phoneMicOutputStream = null
+
+            // 重置状态
+            isPhoneMicRecording = false
+
+            // 更新UI
+            binding.btnPhoneMicRecord.text = "手机麦克风录音"
+            binding.btnPhoneMicRecord.isSelected = false
+
+            Toast.makeText(this, "手机麦克风录音已停止", Toast.LENGTH_SHORT).show()
+            Log.d(TAG, "手机麦克风录音已停止")
+
+        } catch (e: Exception) {
+            Log.e(TAG, "停止手机麦克风录音失败", e)
+            Toast.makeText(this, "停止手机麦克风录音失败: ${e.message}", Toast.LENGTH_SHORT).show()
+        } finally {
+            cleanupPhoneMicResources()
+        }
+    }
+
+    private fun startPhoneMicRecordingThread() {
+        phoneMicRecordingThread = Thread {
+            val buffer = ByteArray(4096)
+            val shortBuffer = ShortArray(buffer.size / 2)
+
+            while (isPhoneMicRecording && !Thread.currentThread().isInterrupted) {
+                try {
+                    val bytesRead = phoneMicAudioRecord?.read(shortBuffer, 0, shortBuffer.size) ?: 0
+                    if (bytesRead > 0) {
+                        // 将Short数组转换为小端序字节数组
+                        val byteBuffer = ByteBuffer.allocate(bytesRead * 2).order(ByteOrder.LITTLE_ENDIAN)
+                        for (i in 0 until bytesRead) {
+                            byteBuffer.putShort(shortBuffer[i])
+                        }
+                        
+                        phoneMicOutputStream?.write(byteBuffer.array(), 0, byteBuffer.array().size)
+                        phoneMicOutputStream?.flush()
+                        phoneMicTotalBytesWritten += byteBuffer.array().size
+
+                        if (phoneMicTotalBytesWritten % 50000 == 0L) {
+                            Log.d(TAG, "手机麦克风录音进度: $phoneMicTotalBytesWritten bytes")
+                        }
+                    } else {
+                        Thread.sleep(5)
+                    }
+                } catch (e: Exception) {
+                    if (!Thread.currentThread().isInterrupted) {
+                        Log.e(TAG, "手机麦克风录音线程错误", e)
+                        Thread.sleep(50)
+                    }
+                }
+            }
+            Log.d(TAG, "手机麦克风录音线程结束")
+        }
+        phoneMicRecordingThread?.start()
+    }
+
+    private fun startPhoneMicUploadTask() {
+        phoneMicUploadRunnable = object : Runnable {
+            override fun run() {
+                if (isPhoneMicRecording) {
+                    Log.d(TAG, "执行手机麦克风定时上传任务")
+                    uploadPhoneMicAudioData()
+                    handler.postDelayed(this, 1000) // 每1秒上传一次
+                }
+            }
+        }
+        handler.postDelayed(phoneMicUploadRunnable!!, 1000)
+    }
+
+    private fun uploadPhoneMicAudioData() {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val currentFile = phoneMicCurrentFile
+                if (currentFile == null || !currentFile.exists()) {
+                    Log.w(TAG, "手机麦克风录音文件不存在，跳过上传")
+                    return@launch
+                }
+
+                val fileSize = currentFile.length()
+                if (fileSize == 0L) {
+                    Log.w(TAG, "手机麦克风录音文件为空，跳过上传")
+                    return@launch
+                }
+
+                // 如果文件太小（小于10KB），也跳过上传
+                if (fileSize < 10240) {
+                    Log.w(TAG, "手机麦克风录音文件太小（${fileSize} bytes），跳过上传")
+                    return@launch
+                }
+
+                Log.d(TAG, "开始上传手机麦克风录音数据: ${currentFile.absolutePath}, 大小: $fileSize bytes")
+
+                // 验证PCM数据正确性
+                val pcmInfo = PcmAnalyzer.analyzePcmFile(currentFile)
+                if (pcmInfo != null) {
+                    Log.d(TAG, "PCM数据分析结果: $pcmInfo")
+                    
+                    if (!pcmInfo.isValid) {
+                        Log.w(TAG, "PCM数据无效，跳过上传")
+                        return@launch
+                    }
+                    
+                    val duration = PcmAnalyzer.getPcmDuration(currentFile, 16000)
+                    Log.d(TAG, "PCM音频时长: ${String.format("%.2f", duration)}秒")
+                } else {
+                    Log.w(TAG, "无法分析PCM数据，跳过上传")
+                    return@launch
+                }
+
+                // 创建临时文件副本用于上传，避免上传过程中文件被修改
+                val tempFile = File(currentFile.parentFile, "temp_${currentFile.name}")
+                currentFile.copyTo(tempFile, overwrite = true)
+
+                // 上传临时文件
+                val responseBody = uploadPhoneMicAudioFile(tempFile)
+                if (responseBody != null) {
+                    Log.d(TAG, "手机麦克风录音数据上传成功")
+                    
+                    // 上传成功后删除原文件和临时文件，创建新文件继续录音
+                    try {
+                        // 删除原始文件
+                        if (currentFile.exists()) {
+                            currentFile.delete()
+                            Log.d(TAG, "删除已上传的手机麦克风录音文件: ${currentFile.absolutePath}")
+                        }
+                        
+                        // 删除临时文件
+                        if (tempFile.exists()) {
+                            tempFile.delete()
+                            Log.d(TAG, "删除临时文件: ${tempFile.absolutePath}")
+                        }
+                        
+                        // 创建新的音频文件继续录音
+                        val newAudioFile = createAudioFile()
+                        if (newAudioFile != null) {
+                            phoneMicOutputStream?.close()
+                            phoneMicOutputStream = null
+                            phoneMicOutputStream = java.io.FileOutputStream(newAudioFile)
+                            phoneMicCurrentFile = newAudioFile
+                            phoneMicTotalBytesWritten = 0L
+                            Log.d(TAG, "创建新的手机麦克风录音文件继续录音: ${newAudioFile.absolutePath}")
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "创建新录音文件失败", e)
+                    }
+                } else {
+                    Log.e(TAG, "手机麦克风录音数据上传失败")
+                    // 上传失败时删除临时文件
+                    if (tempFile.exists()) {
+                        tempFile.delete()
+                        Log.d(TAG, "删除上传失败的临时文件: ${tempFile.absolutePath}")
+                    }
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "手机麦克风录音数据上传异常", e)
+            }
+        }
+    }
+
+    private fun cleanupOldPcmFiles() {
+        try {
+            val cacheDir = File(cacheDir, "audio")
+            if (cacheDir.exists()) {
+                val pcmFiles = cacheDir.listFiles { file ->
+                    file.name.endsWith(".pcm") && (file.name.startsWith("audio_") || file.name.startsWith("temp_"))
+                }
+                
+                pcmFiles?.forEach { file ->
+                    try {
+                        if (file.delete()) {
+                            Log.d(TAG, "清理旧PCM文件: ${file.name}")
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "删除旧PCM文件失败: ${file.name}", e)
+                    }
+                }
+                
+                Log.d(TAG, "清理了 ${pcmFiles?.size ?: 0} 个旧PCM文件")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "清理旧PCM文件失败", e)
+        }
+    }
+
+    private fun cleanupPhoneMicResources() {
+        try {
+            // 停止定时上传任务
+            phoneMicUploadRunnable?.let { handler.removeCallbacks(it) }
+            phoneMicUploadRunnable = null
+
+            phoneMicAudioRecord?.stop()
+            phoneMicAudioRecord?.release()
+            phoneMicAudioRecord = null
+
+            phoneMicRecordingThread?.interrupt()
+            phoneMicRecordingThread = null
+
+            phoneMicOutputStream?.close()
+            phoneMicOutputStream = null
+
+            isPhoneMicRecording = false
+            phoneMicTotalBytesWritten = 0L
+            binding.btnPhoneMicRecord.text = "手机麦克风录音"
+            binding.btnPhoneMicRecord.isSelected = false
+
+            Log.d(TAG, "手机麦克风录音资源清理完成")
+        } catch (e: Exception) {
+            Log.e(TAG, "清理手机麦克风录音资源失败", e)
+        }
     }
 
     override fun onResume() {
@@ -762,6 +1185,7 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
     override fun onDestroy() {
         super.onDestroy()
         stopRecording()
+        stopPhoneMicRecording()
         audioStrategy?.releaseAudioRecord()
         audioStrategy = null
         releaseMediaPlayer()
@@ -800,7 +1224,7 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
                 lastVolumeUpTime = currentTime
                 
                 if (!isRecording) {
-                    Log.d(TAG, "音量加键按下，开始录音")
+                    Log.d(TAG, "音量加键按下，开始录制10秒音频")
                     runOnUiThread {
                         // 模拟按钮按下效果
                         binding.btnRecordAudio.isPressed = true
@@ -810,32 +1234,23 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
                             binding.btnRecordAudio.isPressed = false
                         }, 200) // 200毫秒后恢复
                         
-                        // 模拟点击开始录音按钮
-                        binding.btnRecordAudio.performClick()
-                        Toast.makeText(this@EnhancedMainActivity, "音量加键开始录音", Toast.LENGTH_SHORT).show()
-                    }
-                }
-                return true // 消费事件，防止系统音量调节
-            }
-            KeyEvent.KEYCODE_VOLUME_DOWN -> {
-                if (isRecording) {
-                    Log.d(TAG, "音量减键按下，停止录音")
-                    runOnUiThread {
-                        // 模拟按钮按下效果
-                        binding.btnRecordAudio.isPressed = true
+                        // 开始录音
+                        startRecording()
+                        Toast.makeText(this@EnhancedMainActivity, "音量加键开始录制10秒音频", Toast.LENGTH_SHORT).show()
                         
-                        // 延迟恢复按钮状态
+                        // 10秒后自动停止录音
                         handler.postDelayed({
-                            binding.btnRecordAudio.isPressed = false
-                        }, 200) // 200毫秒后恢复
-                        
-                        // 模拟点击停止录音按钮
-                        binding.btnRecordAudio.performClick()
-                        Toast.makeText(this@EnhancedMainActivity, "音量减键停止录音", Toast.LENGTH_SHORT).show()
+                            if (isRecording) {
+                                Log.d(TAG, "10秒录制时间到，自动停止录音")
+                                stopRecording()
+                                Toast.makeText(this@EnhancedMainActivity, "10秒录制完成，已自动停止", Toast.LENGTH_SHORT).show()
+                            }
+                        }, 10000) // 10秒后自动停止
                     }
                 }
                 return true // 消费事件，防止系统音量调节
             }
+
         }
         return super.onKeyDown(keyCode, event)
     }

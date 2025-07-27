@@ -11,7 +11,7 @@
         android:id="@+id/tvTitle"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="50dp"
+        android:layout_marginTop="30dp"
         android:text="增强功能界面"
         android:textColor="@color/white"
         android:textSize="24sp"
@@ -21,11 +21,43 @@
         app:layout_constraintTop_toTopOf="parent" />
 
     <TextView
+        android:id="@+id/tvServerLabel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="20dp"
+        android:text="服务器地址："
+        android:textColor="@color/white"
+        android:textSize="14sp"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/tvTitle"
+        android:layout_marginStart="40dp" />
+
+    <EditText
+        android:id="@+id/etServerUrl"
+        android:layout_width="0dp"
+        android:layout_height="40dp"
+        android:layout_marginStart="10dp"
+        android:layout_marginTop="20dp"
+        android:layout_marginEnd="40dp"
+        android:background="@drawable/button_background"
+        android:hint="http://114.55.106.4:80"
+        android:text="http://114.55.106.4:80"
+        android:textColor="@color/white"
+        android:textColorHint="#CCCCCC"
+        android:textSize="12sp"
+        android:paddingStart="10dp"
+        android:paddingEnd="10dp"
+        android:inputType="textUri"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toEndOf="@+id/tvServerLabel"
+        app:layout_constraintTop_toBottomOf="@+id/tvTitle" />
+
+    <TextView
         android:id="@+id/btnOriginalCamera"
         android:layout_width="0dp"
         android:layout_height="60dp"
         android:layout_marginStart="40dp"
-        android:layout_marginTop="80dp"
+        android:layout_marginTop="30dp"
         android:layout_marginEnd="40dp"
         android:background="@drawable/button_background_selector"
         android:text="进入原有调试界面"
@@ -37,7 +69,7 @@
         android:stateListAnimator="@null"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/tvTitle" />
+        app:layout_constraintTop_toBottomOf="@+id/etServerUrl" />
 
     <TextView
         android:id="@+id/btnRecordAudio"
@@ -110,6 +142,25 @@
         app:layout_constraintTop_toBottomOf="@+id/btnTakePhoto" />
 
     <TextView
+        android:id="@+id/btnPhoneMicRecord"
+        android:layout_width="0dp"
+        android:layout_height="60dp"
+        android:layout_marginStart="40dp"
+        android:layout_marginTop="30dp"
+        android:layout_marginEnd="40dp"
+        android:background="@drawable/button_background_selector"
+        android:text="手机麦克风录音"
+        android:textColor="@color/white"
+        android:textSize="16sp"
+        android:gravity="center"
+        android:clickable="true"
+        android:focusable="true"
+        android:stateListAnimator="@null"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/btnAudioStatus" />
+
+    <TextView
         android:id="@+id/tvInfo"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
@@ -117,11 +168,11 @@
         android:layout_marginTop="50dp"
         android:layout_marginEnd="20dp"
         android:gravity="center"
-        android:text="功能说明：\n1. 点击'进入原有调节界面'可以进入原来的摄像头调节界面\n2. 点击'开始录音'开始连续录音并自动上传PCM数据\n3. 点击'拍照上传'或按媒体播放/暂停按钮拍照并上传到服务器\n4. 录音数据每1秒自动上传一次（文件大小≥10KB）\n5. 音频上传成功后会播放服务器返回的音频URL\n6. 自动生成唯一设备ID用于服务器识别\n7. 支持USB音频设备和系统麦克风录音"
+        android:text="功能说明：\n1. 点击'进入原有调节界面'可以进入原来的摄像头调节界面\n2. 点击'开始录音'开始连续录音并自动上传PCM数据\n3. 点击'拍照上传'或按媒体播放/暂停按钮拍照并上传到服务器\n4. 点击'手机麦克风录音'使用手机内置麦克风录音并上传\n5. 录音数据每1秒自动上传一次（文件大小≥10KB）\n6. 音频上传成功后会播放服务器返回的音频URL\n7. 自动生成唯一设备ID用于服务器识别\n8. 支持USB音频设备和系统麦克风录音"
         android:textColor="@color/white"
         android:textSize="12sp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/btnAudioStatus" />
+        app:layout_constraintTop_toBottomOf="@+id/btnPhoneMicRecord" />
 
 </androidx.constraintlayout.widget.ConstraintLayout> 
