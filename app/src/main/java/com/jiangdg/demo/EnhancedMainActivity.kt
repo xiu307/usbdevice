@@ -165,8 +165,12 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
         binding.btnRecordAudio.setOnClickListener {
             if (isRecording) {
                 stopRecording()
+                binding.btnRecordAudio.isSelected = false
+                binding.btnRecordAudio.text = "开始连续录音"
             } else {
                 startRecording()
+                binding.btnRecordAudio.isSelected = true
+                binding.btnRecordAudio.text = "停止录音"
             }
         }
 
@@ -416,6 +420,7 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
             audioStrategy?.startRecording()
             isRecording = true
             binding.btnRecordAudio.text = "停止录音"
+            binding.btnRecordAudio.isSelected = true
             binding.tvRecordingStatus.text = "录音中..."
             binding.tvRecordingStatus.visibility = View.VISIBLE
             
@@ -437,7 +442,8 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
         try {
             audioStrategy?.stopRecording()
             isRecording = false
-            binding.btnRecordAudio.text = "开始录音"
+            binding.btnRecordAudio.text = "开始连续录音"
+            binding.btnRecordAudio.isSelected = false
             binding.tvRecordingStatus.text = "录音已停止"
             
             // 停止定时上传

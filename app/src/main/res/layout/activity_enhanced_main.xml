@@ -20,32 +20,40 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
 
-    <Button
+    <TextView
         android:id="@+id/btnOriginalCamera"
         android:layout_width="0dp"
         android:layout_height="60dp"
         android:layout_marginStart="40dp"
         android:layout_marginTop="80dp"
         android:layout_marginEnd="40dp"
-        android:background="@drawable/button_background"
+        android:background="@drawable/button_background_selector"
         android:text="进入原有调节界面"
         android:textColor="@color/white"
         android:textSize="16sp"
+        android:gravity="center"
+        android:clickable="true"
+        android:focusable="true"
+        android:stateListAnimator="@null"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@+id/tvTitle" />
 
-    <Button
+    <TextView
         android:id="@+id/btnRecordAudio"
         android:layout_width="0dp"
         android:layout_height="60dp"
         android:layout_marginStart="40dp"
         android:layout_marginTop="30dp"
         android:layout_marginEnd="40dp"
-        android:background="@drawable/button_background"
+        android:background="@drawable/button_background_selector"
         android:text="开始连续录音"
         android:textColor="@color/white"
         android:textSize="16sp"
+        android:gravity="center"
+        android:clickable="true"
+        android:focusable="true"
+        android:stateListAnimator="@null"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@+id/btnOriginalCamera" />
@@ -63,32 +71,40 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@+id/btnRecordAudio" />
 
-    <Button
+    <TextView
         android:id="@+id/btnTakePhoto"
         android:layout_width="0dp"
         android:layout_height="60dp"
         android:layout_marginStart="40dp"
         android:layout_marginTop="30dp"
         android:layout_marginEnd="40dp"
-        android:background="@drawable/button_background"
+        android:background="@drawable/button_background_selector"
         android:text="拍照上传"
         android:textColor="@color/white"
         android:textSize="16sp"
+        android:gravity="center"
+        android:clickable="true"
+        android:focusable="true"
+        android:stateListAnimator="@null"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@+id/tvRecordingStatus" />
 
-    <Button
+    <TextView
         android:id="@+id/btnAudioStatus"
         android:layout_width="0dp"
         android:layout_height="60dp"
         android:layout_marginStart="40dp"
         android:layout_marginTop="30dp"
         android:layout_marginEnd="40dp"
-        android:background="@drawable/button_background"
+        android:background="@drawable/button_background_selector"
         android:text="查看录音状态"
         android:textColor="@color/white"
         android:textSize="16sp"
+        android:gravity="center"
+        android:clickable="true"
+        android:focusable="true"
+        android:stateListAnimator="@null"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@+id/btnTakePhoto" />
