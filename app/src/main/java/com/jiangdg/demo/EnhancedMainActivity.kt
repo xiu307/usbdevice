@@ -22,7 +22,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.jiangdg.demo.databinding.ActivityEnhancedMainBinding
-import com.jiangdg.ausbc.encode.audio.AudioStrategySystem
+import com.jiangdg.ausbc.encode.audio.AudioStrategyUAC
 import com.jiangdg.ausbc.encode.audio.IAudioStrategy
 import com.jiangdg.ausbc.encode.bean.RawData
 import com.jiangdg.demo.utils.FileUtils
@@ -179,8 +179,9 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
     }
 
     private fun initAudioRecorder() {
-        audioStrategy = AudioStrategySystem()
-        audioStrategy?.initAudioRecord()
+        // 暂时不初始化，等USB设备连接后再初始化
+        // audioStrategy = AudioStrategyUAC(ctrlBlock)
+        // audioStrategy?.initAudioRecord()
     }
 
     private fun initCameraClient() {
@@ -203,6 +204,21 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
                 ctrlBlock ?: return
                 Log.d(TAG, "USB设备已连接并获取控制块: ${device.deviceName}")
                 
+                // 初始化USB音频策略
+                try {
+                    audioStrategy = AudioStrategyUAC(ctrlBlock)
+                    audioStrategy?.initAudioRecord()
+                    Log.d(TAG, "USB音频策略初始化成功")
+                    runOnUiThread {
+                        Toast.makeText(this@EnhancedMainActivity, "USB音频设备已连接", Toast.LENGTH_SHORT).show()
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "USB音频策略初始化失败: ${e.message}")
+                    runOnUiThread {
+                        Toast.makeText(this@EnhancedMainActivity, "USB音频设备连接失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                
                 // 创建CameraUVC实例
                 currentCamera = CameraUVC(this@EnhancedMainActivity, device)
                 currentCamera?.setUsbControlBlock(ctrlBlock)
@@ -213,6 +229,22 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
 
             override fun onDisConnectDec(device: UsbDevice?, ctrlBlock: USBMonitor.UsbControlBlock?) {
                 Log.d(TAG, "USB设备连接断开: ${device?.deviceName}")
+                
+                // 清理USB音频策略
+                try {
+                    if (isRecording) {
+                        stopRecording()
+                    }
+                    audioStrategy?.releaseAudioRecord()
+                    audioStrategy = null
+                    Log.d(TAG, "USB音频策略已清理")
+                    runOnUiThread {
+                        Toast.makeText(this@EnhancedMainActivity, "USB音频设备已断开", Toast.LENGTH_SHORT).show()
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "清理USB音频策略失败: ${e.message}")
+                }
+                
                 closeCamera()
             }
 
@@ -239,7 +271,7 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
             .setPreviewHeight(720)
             .setRenderMode(CameraRequest.RenderMode.OPENGL)
             .setDefaultRotateType(com.jiangdg.ausbc.render.env.RotateType.ANGLE_0)
-            .setAudioSource(CameraRequest.AudioSource.SOURCE_SYS_MIC)
+            .setAudioSource(CameraRequest.AudioSource.SOURCE_DEV_MIC)  // 使用USB设备内置麦克风
             .setPreviewFormat(CameraRequest.PreviewFormat.FORMAT_MJPEG)
             .setAspectRatioShow(true)
             .setCaptureRawImage(false)
@@ -634,6 +666,7 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
         super.onDestroy()
         stopRecording()
         audioStrategy?.releaseAudioRecord()
+        audioStrategy = null
         releaseMediaPlayer()
         closeCamera()
         cameraClient?.unRegister()
