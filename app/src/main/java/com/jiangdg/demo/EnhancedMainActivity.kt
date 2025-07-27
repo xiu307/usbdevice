@@ -627,7 +627,7 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
                     if (photoFile.exists()) {
                         // 显示照片保存路径
                         runOnUiThread {
-                            Toast.makeText(this@EnhancedMainActivity, "真实照片已保存到: $path", Toast.LENGTH_LONG).show()
+                            // Toast.makeText(this@EnhancedMainActivity, "真实照片已保存到: $path", Toast.LENGTH_LONG).show()
                             Log.d(TAG, "真实照片文件大小: ${photoFile.length()} bytes")
                         }
                         // 上传照片
