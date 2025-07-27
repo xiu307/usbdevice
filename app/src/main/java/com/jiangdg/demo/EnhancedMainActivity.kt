@@ -15,6 +15,7 @@ import android.view.KeyEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.View
+import android.view.ViewGroup
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
@@ -27,8 +28,10 @@ import com.jiangdg.ausbc.encode.bean.RawData
 import com.jiangdg.demo.utils.FileUtils
 import com.jiangdg.ausbc.MultiCameraClient
 import com.jiangdg.ausbc.callback.ICaptureCallBack
+import com.jiangdg.ausbc.callback.ICameraStateCallBack
 import com.jiangdg.ausbc.camera.CameraUVC
-import com.jiangdg.ausbc.camera.Camera1Strategy
+import com.jiangdg.ausbc.callback.IDeviceConnectCallBack
+import com.jiangdg.usb.USBMonitor
 import com.jiangdg.ausbc.camera.bean.CameraRequest
 import android.hardware.usb.UsbDevice
 import kotlinx.coroutines.Dispatchers
@@ -44,14 +47,15 @@ import java.io.IOException
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 
-class EnhancedMainActivity : AppCompatActivity() {
+class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
     private lateinit var binding: ActivityEnhancedMainBinding
     private var audioStrategy: IAudioStrategy? = null
     private var isRecording = false
     private var currentAudioFile: File? = null
     private var outputStream: java.io.FileOutputStream? = null
     private var mediaPlayer: MediaPlayer? = null
-    private var cameraStrategy: Camera1Strategy? = null
+    private var cameraClient: MultiCameraClient? = null
+    private var currentCamera: MultiCameraClient.ICamera? = null
     private var surfaceView: SurfaceView? = null
     private val handler = Handler(Looper.getMainLooper())
     
@@ -128,12 +132,11 @@ class EnhancedMainActivity : AppCompatActivity() {
     }
 
     private fun initViews() {
-        // 创建SurfaceView用于摄像头预览
+        // 创建一个1x1像素的隐藏SurfaceView用于摄像头预览
         surfaceView = SurfaceView(this)
         surfaceView?.setZOrderMediaOverlay(true) // 确保在后台
-        // 让SurfaceView完全可见，以便摄像头能够正常预览
-        surfaceView?.visibility = View.VISIBLE
-        surfaceView?.alpha = 1.0f // 设置为完全不透明，确保预览正常
+        surfaceView?.visibility = View.INVISIBLE // 设置为不可见
+        surfaceView?.layoutParams = ViewGroup.LayoutParams(1, 1) // 设置为1x1像素
         
         // 设置SurfaceHolder回调
         surfaceView?.holder?.addCallback(object : SurfaceHolder.Callback {
@@ -181,8 +184,75 @@ class EnhancedMainActivity : AppCompatActivity() {
     }
 
     private fun initCameraClient() {
-        // 使用Camera1Strategy，与DemoFragment类似
-        cameraStrategy = Camera1Strategy(this)
+        // 使用USB摄像头，与DemoFragment类似
+        cameraClient = MultiCameraClient(this, object : IDeviceConnectCallBack {
+            override fun onAttachDev(device: UsbDevice?) {
+                device ?: return
+                Log.d(TAG, "USB设备已连接: ${device.deviceName}")
+                // 自动请求权限
+                requestPermission(device)
+            }
+
+            override fun onDetachDec(device: UsbDevice?) {
+                Log.d(TAG, "USB设备已断开: ${device?.deviceName}")
+                currentCamera = null
+            }
+
+            override fun onConnectDev(device: UsbDevice?, ctrlBlock: USBMonitor.UsbControlBlock?) {
+                device ?: return
+                ctrlBlock ?: return
+                Log.d(TAG, "USB设备已连接并获取控制块: ${device.deviceName}")
+                
+                // 创建CameraUVC实例
+                currentCamera = CameraUVC(this@EnhancedMainActivity, device)
+                currentCamera?.setUsbControlBlock(ctrlBlock)
+                
+                // 打开摄像头
+                openCamera()
+            }
+
+            override fun onDisConnectDec(device: UsbDevice?, ctrlBlock: USBMonitor.UsbControlBlock?) {
+                Log.d(TAG, "USB设备连接断开: ${device?.deviceName}")
+                closeCamera()
+            }
+
+            override fun onCancelDev(device: UsbDevice?) {
+                Log.d(TAG, "USB设备权限被取消: ${device?.deviceName}")
+            }
+        })
+        cameraClient?.register()
+    }
+    
+    private fun requestPermission(device: UsbDevice) {
+        cameraClient?.requestPermission(device)
+    }
+    
+    private fun openCamera() {
+        // 确保SurfaceView已添加到布局中
+        if (surfaceView?.parent == null) {
+            binding.root.addView(surfaceView)
+        }
+        
+        // 创建摄像头请求
+        val cameraRequest = CameraRequest.Builder()
+            .setPreviewWidth(1280)
+            .setPreviewHeight(720)
+            .setRenderMode(CameraRequest.RenderMode.OPENGL)
+            .setDefaultRotateType(com.jiangdg.ausbc.render.env.RotateType.ANGLE_0)
+            .setAudioSource(CameraRequest.AudioSource.SOURCE_SYS_MIC)
+            .setPreviewFormat(CameraRequest.PreviewFormat.FORMAT_MJPEG)
+            .setAspectRatioShow(true)
+            .setCaptureRawImage(false)
+            .setRawPreviewData(false)
+            .create()
+        
+        // 打开摄像头
+        currentCamera?.openCamera(surfaceView, cameraRequest)
+        currentCamera?.setCameraStateCallBack(this)
+    }
+    
+    private fun closeCamera() {
+        currentCamera?.closeCamera()
     }
 
     private fun startRecording() {
@@ -363,112 +433,23 @@ class EnhancedMainActivity : AppCompatActivity() {
     }
 
     private fun takePhotoAndUpload() {
-        // 使用Camera1Strategy进行拍照，与DemoFragment类似
-        if (cameraStrategy?.isCameraOpened() == true) {
+        // 使用USB摄像头进行拍照，与DemoFragment类似
+        if (currentCamera?.isCameraOpened() == true) {
             // 摄像头已打开，直接拍照
             performPhotoCapture()
         } else {
-            // 摄像头未打开，尝试打开摄像头
-            Log.d(TAG, "摄像头未打开，尝试打开摄像头")
+            // 摄像头未打开，提示用户
+            Log.d(TAG, "USB摄像头未打开")
             runOnUiThread {
-                Toast.makeText(this@EnhancedMainActivity, "正在打开摄像头...", Toast.LENGTH_SHORT).show()
-            }
-            
-            try {
-                // 确保SurfaceView已添加到布局中
-                if (surfaceView?.parent == null) {
-                    binding.root.addView(surfaceView)
-                }
-                
-                // 等待Surface准备就绪
-                val surface = surfaceView?.holder?.surface
-                val isValid = surface?.isValid
-                Log.d(TAG, "检查Surface状态: surface=${surface != null}, isValid=$isValid")
-                
-                if (isValid != true) {
-                    Log.d(TAG, "等待Surface准备就绪...")
-                    // 确保SurfaceView已添加到布局中
-                    if (surfaceView?.parent == null) {
-                        Log.d(TAG, "SurfaceView未添加到布局，正在添加...")
-                        binding.root.addView(surfaceView)
-                    }
-                    
-                    surfaceView?.holder?.addCallback(object : SurfaceHolder.Callback {
-                        override fun surfaceCreated(holder: SurfaceHolder) {
-                            Log.d(TAG, "Surface已创建，开始启动摄像头")
-                            startCameraPreview()
-                        }
-                        
-                        override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
-                            Log.d(TAG, "Surface已改变: ${width}x${height}")
-                        }
-                        
-                        override fun surfaceDestroyed(holder: SurfaceHolder) {
-                            Log.d(TAG, "Surface已销毁")
-                        }
-                    })
-                    return
-                }
-                
-                startCameraPreview()
-                
-            } catch (e: Exception) {
-                Log.e(TAG, "打开摄像头失败", e)
-                createAndUploadMockPhoto()
+                Toast.makeText(this@EnhancedMainActivity, "USB摄像头未打开，请先连接USB摄像头", Toast.LENGTH_SHORT).show()
             }
         }
     }
     
-    private fun startCameraPreview() {
-        try {
-            Log.d(TAG, "开始启动摄像头预览")
-            
-            // 检查Surface状态
-            val surface = surfaceView?.holder?.surface
-            val isValid = surface?.isValid
-            Log.d(TAG, "启动预览前检查Surface: surface=${surface != null}, isValid=$isValid")
-            
-            if (isValid != true) {
-                Log.e(TAG, "Surface无效，无法启动摄像头预览")
-                createAndUploadMockPhoto()
-                return
-            }
-            
-            // 创建摄像头请求
-            val cameraRequest = CameraRequest.Builder()
-                .setFrontCamera(false)
-                .setPreviewWidth(1280)  // 降低分辨率，提高兼容性
-                .setPreviewHeight(720)
-                .create()
-            
-            Log.d(TAG, "摄像头请求创建完成，开始启动预览")
-            
-            // 启动预览（使用SurfaceView的SurfaceHolder）
-            Log.d(TAG, "开始启动摄像头预览，SurfaceView状态: visible=${surfaceView?.visibility}, alpha=${surfaceView?.alpha}")
-            cameraStrategy?.startPreview(cameraRequest, surfaceView?.holder)
-            
-            // 等待摄像头打开
-            handler.postDelayed({
-                val isOpened = cameraStrategy?.isCameraOpened()
-                Log.d(TAG, "检查摄像头状态: isOpened=$isOpened")
-                
-                if (isOpened == true) {
-                    Log.d(TAG, "摄像头已打开，开始拍照")
-                    performPhotoCapture()
-                } else {
-                    Log.e(TAG, "摄像头打开失败，使用模拟图片")
-                    createAndUploadMockPhoto()
-                }
-            }, 2000) // 等待2秒让摄像头初始化
-            
-        } catch (e: Exception) {
-            Log.e(TAG, "启动摄像头预览失败", e)
-            createAndUploadMockPhoto()
-        }
-    }
+
     
     private fun performPhotoCapture() {
-        cameraStrategy?.captureImage(object : ICaptureCallBack {
+        currentCamera?.captureImage(object : ICaptureCallBack {
             override fun onBegin() {
                 Log.d(TAG, "开始拍照")
                 runOnUiThread {
@@ -654,7 +635,9 @@ class EnhancedMainActivity : AppCompatActivity() {
         stopRecording()
         audioStrategy?.releaseAudioRecord()
         releaseMediaPlayer()
-        cameraStrategy?.stopPreview()
+        closeCamera()
+        cameraClient?.unRegister()
+        cameraClient?.destroy()
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
@@ -802,6 +785,30 @@ class EnhancedMainActivity : AppCompatActivity() {
         } catch (e: Exception) {
             Log.e(TAG, "创建音频文件失败", e)
             null
+        }
+    }
+    
+    // ICameraStateCallBack 实现
+    override fun onCameraState(self: MultiCameraClient.ICamera, code: ICameraStateCallBack.State, msg: String?) {
+        when (code) {
+            ICameraStateCallBack.State.OPENED -> {
+                Log.d(TAG, "USB摄像头已打开")
+                runOnUiThread {
+                    Toast.makeText(this@EnhancedMainActivity, "USB摄像头已打开", Toast.LENGTH_SHORT).show()
+                }
+            }
+            ICameraStateCallBack.State.CLOSED -> {
+                Log.d(TAG, "USB摄像头已关闭")
+                runOnUiThread {
+                    Toast.makeText(this@EnhancedMainActivity, "USB摄像头已关闭", Toast.LENGTH_SHORT).show()
+                }
+            }
+            ICameraStateCallBack.State.ERROR -> {
+                Log.e(TAG, "USB摄像头错误: $msg")
+                runOnUiThread {
+                    Toast.makeText(this@EnhancedMainActivity, "USB摄像头错误: $msg", Toast.LENGTH_SHORT).show()
+                }
+            }
         }
     }
 } 
