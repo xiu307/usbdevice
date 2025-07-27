@@ -165,12 +165,8 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
         binding.btnRecordAudio.setOnClickListener {
             if (isRecording) {
                 stopRecording()
-                binding.btnRecordAudio.isSelected = false
-                binding.btnRecordAudio.text = "开始连续录音"
             } else {
                 startRecording()
-                binding.btnRecordAudio.isSelected = true
-                binding.btnRecordAudio.text = "停止录音"
             }
         }
 
@@ -403,6 +399,7 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
         if (audioStrategy == null) {
             Toast.makeText(this, "没有检测到音频设备，无法录音", Toast.LENGTH_LONG).show()
             Log.w(TAG, "没有音频设备，无法开始录音")
+            resetRecordingButtonState()
             return
         }
         
@@ -411,6 +408,7 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
             currentAudioFile = createAudioFile()
             if (currentAudioFile == null) {
                 Toast.makeText(this, "创建音频文件失败", Toast.LENGTH_SHORT).show()
+                resetRecordingButtonState()
                 return
             }
             
@@ -418,6 +416,8 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
             
             // 启动录音（使用与MainActivity相同的模式）
             audioStrategy?.startRecording()
+            
+            // 只有在录音启动成功后才设置按钮状态
             isRecording = true
             binding.btnRecordAudio.text = "停止录音"
             binding.btnRecordAudio.isSelected = true
@@ -435,17 +435,39 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
         } catch (e: Exception) {
             Log.e(TAG, "录音启动失败", e)
             Toast.makeText(this, "录音启动失败: ${e.message}", Toast.LENGTH_SHORT).show()
+            // 确保在异常情况下恢复按钮状态
+            resetRecordingButtonState()
+            // 清理可能已经创建的资源
+            cleanupRecordingResources()
         }
     }
 
     private fun stopRecording() {
         try {
             audioStrategy?.stopRecording()
-            isRecording = false
-            binding.btnRecordAudio.text = "开始连续录音"
-            binding.btnRecordAudio.isSelected = false
-            binding.tvRecordingStatus.text = "录音已停止"
+            cleanupRecordingResources()
+            resetRecordingButtonState()
             
+            Toast.makeText(this, "录音已停止", Toast.LENGTH_SHORT).show()
+            Log.d(TAG, "录音已停止")
+        } catch (e: Exception) {
+            Log.e(TAG, "停止录音失败", e)
+            cleanupRecordingResources()
+            resetRecordingButtonState()
+        }
+    }
+    
+    private fun resetRecordingButtonState() {
+        Log.d(TAG, "重置录音按钮状态")
+        binding.btnRecordAudio.text = "开始连续录音"
+        binding.btnRecordAudio.isSelected = false
+        binding.tvRecordingStatus.text = "录音已停止"
+        binding.tvRecordingStatus.visibility = View.VISIBLE
+        Log.d(TAG, "录音按钮状态已重置: text=${binding.btnRecordAudio.text}, isSelected=${binding.btnRecordAudio.isSelected}")
+    }
+    
+    private fun cleanupRecordingResources() {
+        try {
             // 停止定时上传
             handler.removeCallbacks(recordingRunnable)
             
@@ -453,10 +475,12 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
             outputStream?.close()
             outputStream = null
             
-            Toast.makeText(this, "录音已停止", Toast.LENGTH_SHORT).show()
-            Log.d(TAG, "录音已停止")
+            // 重置录音状态
+            isRecording = false
+            
+            Log.d(TAG, "录音资源清理完成")
         } catch (e: Exception) {
-            Log.e(TAG, "停止录音失败", e)
+            Log.e(TAG, "清理录音资源失败", e)
         }
     }
 
@@ -953,6 +977,8 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
         Thread {
             Log.d(TAG, "录音线程启动")
             var totalBytesWritten = 0L
+            var consecutiveErrors = 0
+            val maxConsecutiveErrors = 10 // 连续错误次数阈值
             
             while (isRecording) {
                 try {
@@ -961,6 +987,7 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
                         outputStream?.write(rawData.data, 0, rawData.size)
                         outputStream?.flush()
                         totalBytesWritten += rawData.size
+                        consecutiveErrors = 0 // 重置错误计数
                         
                         if (totalBytesWritten % 50000 == 0L) { // 每50KB记录一次，减少日志频率
                             Log.d(TAG, "录音进度: $totalBytesWritten bytes")
@@ -971,6 +998,18 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "录音线程错误", e)
+                    consecutiveErrors++
+                    
+                    // 如果连续错误次数过多，停止录音
+                    if (consecutiveErrors >= maxConsecutiveErrors) {
+                        Log.e(TAG, "录音线程连续错误次数过多，停止录音")
+                        runOnUiThread {
+                            Toast.makeText(this@EnhancedMainActivity, "录音出现错误，已自动停止", Toast.LENGTH_SHORT).show()
+                            stopRecording()
+                        }
+                        break
+                    }
+                    
                     // 不要立即退出，继续尝试录音
                     Thread.sleep(50) // 减少错误恢复时间
                 }
