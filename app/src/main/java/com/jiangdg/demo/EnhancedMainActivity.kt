@@ -563,6 +563,16 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
                 runOnUiThread {
                     Toast.makeText(this@EnhancedMainActivity, "音频上传成功", Toast.LENGTH_SHORT).show()
                     
+                    // 上传成功后删除本地文件
+                    try {
+                        if (audioFile.exists()) {
+                            val deleted = audioFile.delete()
+                            Log.d(TAG, "本地音频文件删除${if (deleted) "成功" else "失败"}: ${audioFile.absolutePath}")
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "删除本地音频文件失败", e)
+                    }
+                    
                     // 如果响应包含URL，尝试播放音频
                     if (!responseBody.isNullOrEmpty()) {
                         Log.d(TAG, "尝试播放返回的音频URL: $responseBody")
@@ -869,6 +879,7 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
                             val response = uploadAudioFile(file)
                             if (response != null) {
                                 Log.d(TAG, "队列文件上传成功: ${file.name}")
+                                // 文件已在uploadAudioFile中删除，这里不需要额外处理
                             } else {
                                 Log.e(TAG, "队列文件上传失败: ${file.name}")
                                 // 重新添加到队列
