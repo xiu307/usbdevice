@@ -526,6 +526,15 @@ class CameraUVC(ctx: Context, device: UsbDevice) : MultiCameraClient.ICamera(ctx
         mUvcCamera?.resetHue()
     }
 
+    /**
+     * Set button callback
+     *
+     * @param callback button callback interface
+     */
+    fun setButtonCallback(callback: com.jiangdg.uvc.IButtonCallback) {
+        mUvcCamera?.setButtonCallback(callback)
+    }
+
     companion object {
         private const val TAG = "CameraUVC"
         private const val MIN_FS = 1
