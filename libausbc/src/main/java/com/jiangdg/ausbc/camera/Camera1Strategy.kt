@@ -29,7 +29,6 @@ import com.jiangdg.ausbc.camera.bean.PreviewSize
 import com.jiangdg.ausbc.utils.Logger
 import com.jiangdg.ausbc.utils.Utils
 import java.io.File
-import kotlin.Exception
 
 /** Camera1 usage
  *

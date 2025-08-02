@@ -15,7 +15,12 @@
  */
 package com.jiangdg.ausbc.encode
 
-import android.media.*
+import android.media.AudioFormat
+import android.media.AudioManager
+import android.media.AudioTrack
+import android.media.MediaCodec
+import android.media.MediaCodecInfo
+import android.media.MediaFormat
 import android.os.Process
 import com.jiangdg.ausbc.callback.ICaptureCallBack
 import com.jiangdg.ausbc.callback.IEncodeDataCallBack
@@ -30,9 +35,12 @@ import com.jiangdg.natives.LameMp3
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
-import java.util.concurrent.*
+import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.Exception
 
 /** AAC encode by MediaCodec
  *

@@ -22,8 +22,8 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.lifecycle.lifecycleScope
 import com.jiangdg.ausbc.base.BaseFragment
-import com.jiangdg.ausbc.camera.ICameraStrategy
 import com.jiangdg.ausbc.camera.Camera1Strategy
+import com.jiangdg.ausbc.camera.ICameraStrategy
 import com.jiangdg.ausbc.camera.bean.CameraRequest
 import com.jiangdg.ausbc.utils.Logger
 import com.jiangdg.ausbc.utils.ToastUtils

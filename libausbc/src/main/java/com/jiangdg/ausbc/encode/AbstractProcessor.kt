@@ -27,7 +27,6 @@ import com.jiangdg.ausbc.utils.Logger
 import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.Exception
 
 
 /** Abstract processor

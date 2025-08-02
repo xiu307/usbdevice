@@ -26,9 +26,13 @@ import com.jiangdg.ausbc.callback.IPreviewDataCallBack
 import com.jiangdg.ausbc.camera.bean.CameraStatus
 import com.jiangdg.ausbc.camera.bean.CameraUvcInfo
 import com.jiangdg.ausbc.camera.bean.PreviewSize
-import com.jiangdg.ausbc.utils.*
+import com.jiangdg.ausbc.utils.CameraUtils
 import com.jiangdg.ausbc.utils.CameraUtils.isFilterDevice
 import com.jiangdg.ausbc.utils.CameraUtils.isUsbCamera
+import com.jiangdg.ausbc.utils.Logger
+import com.jiangdg.ausbc.utils.MediaUtils
+import com.jiangdg.ausbc.utils.SettableFuture
+import com.jiangdg.ausbc.utils.Utils
 import com.jiangdg.usb.DeviceFilter
 import com.jiangdg.usb.USBMonitor
 import com.jiangdg.uvc.IFrameCallback
@@ -37,7 +41,6 @@ import java.io.File
 import java.util.concurrent.LinkedBlockingDeque
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.Exception
 
 /** UVC Camera usage
  *

@@ -15,7 +15,9 @@
  */
 package com.jiangdg.ausbc.encode.audio
 
-import android.media.*
+import android.media.AudioFormat
+import android.media.AudioRecord
+import android.media.MediaRecorder
 import android.os.Process
 import com.jiangdg.ausbc.encode.bean.RawData
 import com.jiangdg.ausbc.utils.Logger

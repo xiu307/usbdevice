@@ -16,7 +16,7 @@
 package com.jiangdg.ausbc.utils
 
 import android.app.Activity
-import java.util.*
+import java.util.Stack
 
 /** Activity stack manager
  *

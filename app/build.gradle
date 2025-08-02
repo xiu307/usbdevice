@@ -65,6 +65,9 @@ dependencies {
     implementation "com.zlc.glide:webpdecoder:1.6.4.9.0"
     implementation 'com.tencent:mmkv:1.2.12'
     implementation 'com.squareup.okhttp3:okhttp:4.9.3'
+    
+    // MultiDex support
+    implementation 'androidx.multidex:multidex:2.0.1'
 
     // For debug online
     implementation project(':libausbc')

@@ -1,16 +1,29 @@
 package com.jiangdg.demo
 
+// Android Framework
+
+// AndroidX
+
+// Kotlin Coroutines
+
+// OkHttp
+
+// Java
+
+// Project specific
 import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
-import android.provider.Settings
-import android.graphics.Bitmap
+import android.hardware.usb.UsbDevice
 import android.media.MediaPlayer
+import android.media.session.MediaSession
+import android.media.session.PlaybackState
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import android.util.Log
 import android.view.KeyEvent
 import android.view.SurfaceHolder
@@ -22,29 +35,30 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
-import com.jiangdg.demo.databinding.ActivityEnhancedMainBinding
-import com.jiangdg.ausbc.encode.audio.AudioStrategyUAC
+import com.jiangdg.ausbc.MultiCameraClient
+import com.jiangdg.ausbc.callback.ICameraStateCallBack
+import com.jiangdg.ausbc.callback.ICaptureCallBack
+import com.jiangdg.ausbc.callback.IDeviceConnectCallBack
+import com.jiangdg.ausbc.camera.CameraUVC
+import com.jiangdg.ausbc.camera.bean.CameraRequest
 import com.jiangdg.ausbc.encode.audio.AudioStrategySystem
+import com.jiangdg.ausbc.encode.audio.AudioStrategyUAC
 import com.jiangdg.ausbc.encode.audio.IAudioStrategy
-import com.jiangdg.ausbc.encode.bean.RawData
+import com.jiangdg.demo.databinding.ActivityEnhancedMainBinding
 import com.jiangdg.demo.utils.FileUtils
 import com.jiangdg.demo.utils.PcmAnalyzer
-import com.jiangdg.ausbc.MultiCameraClient
-import com.jiangdg.ausbc.callback.ICaptureCallBack
-import com.jiangdg.ausbc.callback.ICameraStateCallBack
-import com.jiangdg.ausbc.camera.CameraUVC
-import com.jiangdg.ausbc.callback.IDeviceConnectCallBack
 import com.jiangdg.usb.USBMonitor
-import com.jiangdg.ausbc.camera.bean.CameraRequest
-import android.hardware.usb.UsbDevice
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.delay
-import okhttp3.*
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import okhttp3.RequestBody.Companion.asRequestBody
-import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
 import java.io.File
 import java.io.IOException
 import java.nio.ByteBuffer
@@ -60,6 +74,10 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
     private var currentAudioFile: File? = null
     private var outputStream: java.io.FileOutputStream? = null
     private var mediaPlayer: MediaPlayer? = null
+    
+    // MediaSession相关
+    private var mediaSession: MediaSession? = null
+    private var playbackState: PlaybackState? = null
     
     // 手机麦克风录音相关
     private var phoneMicAudioRecord: android.media.AudioRecord? = null
@@ -150,8 +168,178 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
 
         checkPermissions()
         initViews()
+        initMediaSession()
         initAudioRecorder()
         // initCameraClient() 移到onResume中，因为onPause会停止摄像头
+    }
+
+    private fun initMediaSession() {
+        try {
+            // 创建MediaSession
+            mediaSession = MediaSession(this, "EnhancedMainActivity")
+            
+            // 设置MediaSession回调
+            mediaSession?.setCallback(object : MediaSession.Callback() {
+                override fun onPlay() {
+                    Log.d(TAG, "MediaSession: 播放按钮被按下")
+                    handleMediaSessionPlay()
+                }
+                
+                override fun onPause() {
+                    Log.d(TAG, "MediaSession: 暂停按钮被按下")
+                    handleMediaSessionPause()
+                }
+                
+                override fun onStop() {
+                    Log.d(TAG, "MediaSession: 停止按钮被按下")
+                    handleMediaSessionStop()
+                }
+                
+                override fun onSkipToNext() {
+                    Log.d(TAG, "MediaSession: 下一曲按钮被按下")
+                    handleMediaSessionNext()
+                }
+                
+                override fun onSkipToPrevious() {
+                    Log.d(TAG, "MediaSession: 上一曲按钮被按下")
+                    handleMediaSessionPrevious()
+                }
+                
+                override fun onSeekTo(pos: Long) {
+                    Log.d(TAG, "MediaSession: 跳转到位置 $pos")
+                    handleMediaSessionSeek(pos)
+                }
+            })
+            
+            // 设置MediaSession为活跃状态
+            mediaSession?.isActive = true
+            
+            // 初始化播放状态
+            updatePlaybackState(PlaybackState.STATE_NONE)
+            
+            Log.d(TAG, "MediaSession初始化成功")
+        } catch (e: Exception) {
+            Log.e(TAG, "MediaSession初始化失败", e)
+        }
+    }
+    
+    private fun updatePlaybackState(state: Int) {
+        try {
+            val stateBuilder = PlaybackState.Builder()
+                .setState(state, PlaybackState.PLAYBACK_POSITION_UNKNOWN, 1.0f)
+                .setActions(
+                    PlaybackState.ACTION_PLAY or
+                    PlaybackState.ACTION_PAUSE or
+                    PlaybackState.ACTION_STOP or
+                    PlaybackState.ACTION_SKIP_TO_NEXT or
+                    PlaybackState.ACTION_SKIP_TO_PREVIOUS or
+                    PlaybackState.ACTION_SEEK_TO
+                )
+            
+            playbackState = stateBuilder.build()
+            mediaSession?.setPlaybackState(playbackState)
+            
+            Log.d(TAG, "播放状态已更新: $state")
+        } catch (e: Exception) {
+            Log.e(TAG, "更新播放状态失败", e)
+        }
+    }
+    
+    private fun handleMediaSessionPlay() {
+        Log.d(TAG, "处理MediaSession播放事件")
+        runOnUiThread {
+            // 模拟按钮按下效果
+            binding.btnRecordAudio.isPressed = true
+            
+            // 延迟恢复按钮状态
+            handler.postDelayed({
+                binding.btnRecordAudio.isPressed = false
+            }, 200)
+            
+            // 开始录音
+            if (!isRecording) {
+                startRecording()
+                Toast.makeText(this@EnhancedMainActivity, "媒体键开始录音", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+    
+    private fun handleMediaSessionPause() {
+        Log.d(TAG, "处理MediaSession暂停事件")
+        runOnUiThread {
+            // 模拟按钮按下效果
+            binding.btnRecordAudio.isPressed = true
+            
+            // 延迟恢复按钮状态
+            handler.postDelayed({
+                binding.btnRecordAudio.isPressed = false
+            }, 200)
+            
+            // 停止录音
+            if (isRecording) {
+                stopRecording()
+                Toast.makeText(this@EnhancedMainActivity, "媒体键停止录音", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+    
+    private fun handleMediaSessionStop() {
+        Log.d(TAG, "处理MediaSession停止事件")
+        runOnUiThread {
+            // 停止所有录音
+            if (isRecording) {
+                stopRecording()
+            }
+            if (isPhoneMicRecording) {
+                stopPhoneMicRecording()
+            }
+            Toast.makeText(this@EnhancedMainActivity, "媒体键停止所有录音", Toast.LENGTH_SHORT).show()
+        }
+    }
+    
+    private fun handleMediaSessionNext() {
+        Log.d(TAG, "处理MediaSession下一曲事件")
+        runOnUiThread {
+            // 模拟按钮按下效果
+            binding.btnTakePhoto.isPressed = true
+            
+            // 延迟恢复按钮状态
+            handler.postDelayed({
+                binding.btnTakePhoto.isPressed = false
+            }, 200)
+            
+            // 拍照上传
+            takePhotoAndUpload()
+            Toast.makeText(this@EnhancedMainActivity, "媒体键拍照上传", Toast.LENGTH_SHORT).show()
+        }
+    }
+    
+    private fun handleMediaSessionPrevious() {
+        Log.d(TAG, "处理MediaSession上一曲事件")
+        runOnUiThread {
+            // 模拟按钮按下效果
+            binding.btnPhoneMicRecord.isPressed = true
+            
+            // 延迟恢复按钮状态
+            handler.postDelayed({
+                binding.btnPhoneMicRecord.isPressed = false
+            }, 200)
+            
+            // 切换手机麦克风录音状态
+            if (isPhoneMicRecording) {
+                stopPhoneMicRecording()
+                Toast.makeText(this@EnhancedMainActivity, "媒体键停止手机录音", Toast.LENGTH_SHORT).show()
+            } else {
+                startPhoneMicRecording()
+                Toast.makeText(this@EnhancedMainActivity, "媒体键开始手机录音", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+    
+    private fun handleMediaSessionSeek(position: Long) {
+        Log.d(TAG, "处理MediaSession跳转事件: $position")
+        // 这里可以根据需要实现跳转逻辑
+        // 比如跳转到特定的录音时间点
     }
 
     private fun checkPermissions() {
@@ -222,18 +410,25 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
             startActivity(Intent(this, MainActivity::class.java))
         }
 
-        // 开始/停止录音
+        // 开始/停止录音 - 优化后的按钮处理
         binding.btnRecordAudio.setOnClickListener {
             if (isRecording) {
                 stopRecording()
+                updatePlaybackState(PlaybackState.STATE_STOPPED)
             } else {
                 startRecording()
+                updatePlaybackState(PlaybackState.STATE_PLAYING)
             }
         }
 
-        // 拍照上传
+        // 拍照上传 - 优化后的按钮处理
         binding.btnTakePhoto.setOnClickListener {
             takePhotoAndUpload()
+            // 拍照时短暂显示播放状态
+            updatePlaybackState(PlaybackState.STATE_PLAYING)
+            handler.postDelayed({
+                updatePlaybackState(if (isRecording) PlaybackState.STATE_PLAYING else PlaybackState.STATE_STOPPED)
+            }, 500)
         }
 
         // 查看录音状态
@@ -241,12 +436,14 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
             showAudioStatus()
         }
 
-        // 手机麦克风录音
+        // 手机麦克风录音 - 优化后的按钮处理
         binding.btnPhoneMicRecord.setOnClickListener {
             if (isPhoneMicRecording) {
                 stopPhoneMicRecording()
+                updatePlaybackState(PlaybackState.STATE_STOPPED)
             } else {
                 startPhoneMicRecording()
+                updatePlaybackState(PlaybackState.STATE_PLAYING)
             }
         }
     }
@@ -470,6 +667,7 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
             Toast.makeText(this, "没有检测到音频设备，无法录音", Toast.LENGTH_LONG).show()
             Log.w(TAG, "没有音频设备，无法开始录音")
             resetRecordingButtonState()
+            updatePlaybackState(PlaybackState.STATE_STOPPED)
             return
         }
         
@@ -479,6 +677,7 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
             if (currentAudioFile == null) {
                 Toast.makeText(this, "创建音频文件失败", Toast.LENGTH_SHORT).show()
                 resetRecordingButtonState()
+                updatePlaybackState(PlaybackState.STATE_STOPPED)
                 return
             }
             
@@ -494,6 +693,9 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
             binding.tvRecordingStatus.text = "录音中..."
             binding.tvRecordingStatus.visibility = View.VISIBLE
             
+            // 更新MediaSession状态
+            updatePlaybackState(PlaybackState.STATE_PLAYING)
+            
             // 延迟2秒后开始定时上传，确保录音有足够时间开始
             handler.postDelayed(recordingRunnable, 2000)
             
@@ -507,6 +709,7 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
             Toast.makeText(this, "录音启动失败: ${e.message}", Toast.LENGTH_SHORT).show()
             // 确保在异常情况下恢复按钮状态
             resetRecordingButtonState()
+            updatePlaybackState(PlaybackState.STATE_STOPPED)
             // 清理可能已经创建的资源
             cleanupRecordingResources()
         }
@@ -518,12 +721,16 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
             cleanupRecordingResources()
             resetRecordingButtonState()
             
+            // 更新MediaSession状态
+            updatePlaybackState(PlaybackState.STATE_STOPPED)
+            
             Toast.makeText(this, "录音已停止", Toast.LENGTH_SHORT).show()
             Log.d(TAG, "录音已停止")
         } catch (e: Exception) {
             Log.e(TAG, "停止录音失败", e)
             cleanupRecordingResources()
             resetRecordingButtonState()
+            updatePlaybackState(PlaybackState.STATE_STOPPED)
         }
     }
     
@@ -916,6 +1123,9 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
             binding.btnPhoneMicRecord.text = "停止手机录音"
             binding.btnPhoneMicRecord.isSelected = true
 
+            // 更新MediaSession状态
+            updatePlaybackState(PlaybackState.STATE_PLAYING)
+
             // 启动录音线程
             startPhoneMicRecordingThread()
 
@@ -929,6 +1139,7 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
             Log.e(TAG, "手机麦克风录音启动失败", e)
             Toast.makeText(this, "手机麦克风录音启动失败: ${e.message}", Toast.LENGTH_SHORT).show()
             cleanupPhoneMicResources()
+            updatePlaybackState(PlaybackState.STATE_STOPPED)
         }
     }
 
@@ -959,6 +1170,9 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
             binding.btnPhoneMicRecord.text = "手机麦克风录音"
             binding.btnPhoneMicRecord.isSelected = false
 
+            // 更新MediaSession状态
+            updatePlaybackState(PlaybackState.STATE_STOPPED)
+
             Toast.makeText(this, "手机麦克风录音已停止", Toast.LENGTH_SHORT).show()
             Log.d(TAG, "手机麦克风录音已停止")
 
@@ -967,6 +1181,7 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
             Toast.makeText(this, "停止手机麦克风录音失败: ${e.message}", Toast.LENGTH_SHORT).show()
         } finally {
             cleanupPhoneMicResources()
+            updatePlaybackState(PlaybackState.STATE_STOPPED)
         }
     }
 
@@ -1157,6 +1372,9 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
             binding.btnPhoneMicRecord.text = "手机麦克风录音"
             binding.btnPhoneMicRecord.isSelected = false
 
+            // 更新MediaSession状态
+            updatePlaybackState(PlaybackState.STATE_STOPPED)
+
             Log.d(TAG, "手机麦克风录音资源清理完成")
         } catch (e: Exception) {
             Log.e(TAG, "清理手机麦克风录音资源失败", e)
@@ -1174,12 +1392,20 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
             Log.d(TAG, "onResume: 重新注册摄像头客户端以检测设备")
             cameraClient?.register()
         }
+        
+        // 重新激活MediaSession
+        mediaSession?.isActive = true
+        Log.d(TAG, "MediaSession已重新激活")
     }
 
     override fun onPause() {
         super.onPause()
         // 当Activity暂停时，关闭摄像头和音频设备
         closeCameraAndAudio()
+        
+        // 暂停MediaSession
+        mediaSession?.isActive = false
+        Log.d(TAG, "MediaSession已暂停")
     }
 
     override fun onDestroy() {
@@ -1192,25 +1418,47 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
         closeCamera()
         cameraClient?.unRegister()
         cameraClient?.destroy()
+        
+        // 释放MediaSession
+        try {
+            mediaSession?.release()
+            mediaSession = null
+            Log.d(TAG, "MediaSession已释放")
+        } catch (e: Exception) {
+            Log.e(TAG, "释放MediaSession失败", e)
+        }
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         when (keyCode) {
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
-                Log.d(TAG, "检测到媒体播放/暂停按钮，模拟点击拍照上传按钮")
-                runOnUiThread {
-                    // 模拟按钮按下效果
-                    binding.btnTakePhoto.isPressed = true
-                    
-                    // 延迟恢复按钮状态
-                    handler.postDelayed({
-                        binding.btnTakePhoto.isPressed = false
-                    }, 200) // 200毫秒后恢复
-                    
-                    // 模拟点击拍照上传按钮
-                    binding.btnTakePhoto.performClick()
-                    Toast.makeText(this@EnhancedMainActivity, "媒体键拍照上传", Toast.LENGTH_SHORT).show()
-                }
+                Log.d(TAG, "检测到媒体播放/暂停按钮")
+                // 让MediaSession处理播放/暂停事件
+                return false // 不消费事件，让MediaSession处理
+            }
+            KeyEvent.KEYCODE_MEDIA_PLAY -> {
+                Log.d(TAG, "检测到媒体播放按钮")
+                handleMediaSessionPlay()
+                return true
+            }
+            KeyEvent.KEYCODE_MEDIA_PAUSE -> {
+                Log.d(TAG, "检测到媒体暂停按钮")
+                handleMediaSessionPause()
+                return true
+            }
+            KeyEvent.KEYCODE_MEDIA_STOP -> {
+                Log.d(TAG, "检测到媒体停止按钮")
+                handleMediaSessionStop()
+                return true
+            }
+            KeyEvent.KEYCODE_MEDIA_NEXT -> {
+                Log.d(TAG, "检测到媒体下一曲按钮")
+                handleMediaSessionNext()
+                return true
+            }
+            KeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
+                Log.d(TAG, "检测到媒体上一曲按钮")
+                handleMediaSessionPrevious()
                 return true
             }
             KeyEvent.KEYCODE_VOLUME_UP -> {
@@ -1236,6 +1484,7 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
                         
                         // 开始录音
                         startRecording()
+                        updatePlaybackState(PlaybackState.STATE_PLAYING)
                         Toast.makeText(this@EnhancedMainActivity, "音量加键开始录制10秒音频", Toast.LENGTH_SHORT).show()
                         
                         // 10秒后自动停止录音
@@ -1243,6 +1492,7 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
                             if (isRecording) {
                                 Log.d(TAG, "10秒录制时间到，自动停止录音")
                                 stopRecording()
+                                updatePlaybackState(PlaybackState.STATE_STOPPED)
                                 Toast.makeText(this@EnhancedMainActivity, "10秒录制完成，已自动停止", Toast.LENGTH_SHORT).show()
                             }
                         }, 10000) // 10秒后自动停止
@@ -1250,7 +1500,6 @@ class EnhancedMainActivity : AppCompatActivity(), ICameraStateCallBack {
                 }
                 return true // 消费事件，防止系统音量调节
             }
-
         }
         return super.onKeyDown(keyCode, event)
     }

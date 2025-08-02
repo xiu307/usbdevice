@@ -19,7 +19,11 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.SurfaceTexture
-import android.os.*
+import android.os.Environment
+import android.os.Handler
+import android.os.HandlerThread
+import android.os.Looper
+import android.os.Message
 import android.view.OrientationEventListener
 import android.view.SurfaceHolder
 import androidx.core.content.ContextCompat
@@ -35,9 +39,8 @@ import com.jiangdg.ausbc.camera.bean.CameraStatus
 import com.jiangdg.ausbc.camera.bean.PreviewSize
 import com.jiangdg.ausbc.utils.bus.BusKey
 import com.jiangdg.ausbc.utils.bus.EventBus
-import java.lang.Deprecated
 import java.text.SimpleDateFormat
-import java.util.*
+import java.util.Locale
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors

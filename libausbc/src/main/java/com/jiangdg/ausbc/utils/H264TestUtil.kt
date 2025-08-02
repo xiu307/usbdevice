@@ -18,7 +18,6 @@ package com.jiangdg.ausbc.utils
 import android.os.Environment
 import java.io.FileOutputStream
 import java.io.IOException
-import java.lang.Exception
 
 /** save h264 data for test
  *

@@ -15,7 +15,9 @@
  */
 package com.jiangdg.demo
 
-import android.Manifest.permission.*
+import android.Manifest.permission.CAMERA
+import android.Manifest.permission.RECORD_AUDIO
+import android.Manifest.permission.WRITE_EXTERNAL_STORAGE
 import android.os.Bundle
 import android.os.PowerManager
 import androidx.appcompat.app.AppCompatActivity

@@ -16,7 +16,12 @@
 package com.jiangdg.ausbc.utils.bus
 
 import androidx.annotation.MainThread
-import androidx.lifecycle.*
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LiveData
+import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.Observer
 import java.util.concurrent.ConcurrentHashMap
 
 /** Event bus with using [LiveData]

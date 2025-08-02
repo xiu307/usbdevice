@@ -20,7 +20,14 @@ import android.content.ContentValues
 import android.content.Context
 import android.graphics.ImageFormat
 import android.graphics.SurfaceTexture
-import android.hardware.camera2.*
+import android.hardware.camera2.CameraAccessException
+import android.hardware.camera2.CameraCaptureSession
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraDevice
+import android.hardware.camera2.CameraManager
+import android.hardware.camera2.CaptureRequest
+import android.hardware.camera2.CaptureResult
+import android.hardware.camera2.TotalCaptureResult
 import android.media.ImageReader
 import android.os.Build
 import android.provider.MediaStore
@@ -30,16 +37,15 @@ import android.view.Surface
 import androidx.annotation.RequiresApi
 import com.jiangdg.ausbc.callback.IPreviewDataCallBack
 import com.jiangdg.ausbc.camera.bean.CameraStatus
-import com.jiangdg.ausbc.camera.bean.PreviewSize
-import com.jiangdg.ausbc.utils.SettableFuture
 import com.jiangdg.ausbc.camera.bean.CameraV2Info
+import com.jiangdg.ausbc.camera.bean.PreviewSize
 import com.jiangdg.ausbc.utils.Logger
+import com.jiangdg.ausbc.utils.SettableFuture
 import com.jiangdg.ausbc.utils.Utils
 import java.io.File
 import java.util.concurrent.BlockingQueue
 import java.util.concurrent.LinkedBlockingDeque
 import java.util.concurrent.TimeUnit
-import kotlin.Exception
 
 /** Camera2 usage
  *

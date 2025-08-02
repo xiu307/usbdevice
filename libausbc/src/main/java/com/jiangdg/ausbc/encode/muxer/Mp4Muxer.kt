@@ -31,10 +31,9 @@ import com.jiangdg.ausbc.utils.Logger
 import com.jiangdg.ausbc.utils.MediaUtils
 import com.jiangdg.ausbc.utils.Utils
 import java.io.File
-import java.lang.Exception
 import java.nio.ByteBuffer
 import java.text.SimpleDateFormat
-import java.util.*
+import java.util.Locale
 
 /**
  * MediaMuxer for Mp4

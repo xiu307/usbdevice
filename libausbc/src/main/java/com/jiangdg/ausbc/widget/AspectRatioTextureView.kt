@@ -16,7 +16,6 @@
 package com.jiangdg.ausbc.widget
 
 import android.content.Context
-import android.content.res.Configuration
 import android.util.AttributeSet
 import android.view.Surface
 import android.view.TextureView

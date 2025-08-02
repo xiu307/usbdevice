@@ -28,7 +28,8 @@ import com.jiangdg.ausbc.callback.ICaptureCallBack
 import com.jiangdg.ausbc.callback.IEncodeDataCallBack
 import com.jiangdg.ausbc.callback.IPlayCallBack
 import com.jiangdg.ausbc.callback.IPreviewDataCallBack
-import com.jiangdg.ausbc.camera.*
+import com.jiangdg.ausbc.camera.CameraUvcStrategy
+import com.jiangdg.ausbc.camera.ICameraStrategy
 import com.jiangdg.ausbc.camera.bean.CameraRequest
 import com.jiangdg.ausbc.camera.bean.CameraStatus
 import com.jiangdg.ausbc.camera.bean.PreviewSize

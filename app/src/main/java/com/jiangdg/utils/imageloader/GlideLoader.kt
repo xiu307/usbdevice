@@ -39,7 +39,6 @@ import com.bumptech.glide.request.RequestListener
 import com.bumptech.glide.request.RequestOptions
 import com.bumptech.glide.request.target.Target
 import com.jiangdg.demo.R
-import java.lang.IllegalArgumentException
 
 /**GlideImageLoader by glide
  *
